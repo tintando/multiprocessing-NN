@@ -193,6 +193,7 @@ void backpropagation(MLP *mlp, double *input, double *target, ActivationFunction
         for (int j = 0; j < mlp->hidden_layers_size[i]; j++) {
             double error = 0.0;
             for (int k = 0; k < (i == mlp->num_hidden_layers - 1 ? mlp->output_size : mlp->hidden_layers_size[i + 1]); k++) {
+                //weights*delta of layer n+1
                 error += delta[i + 1][k] * mlp->weights[i][k * mlp->hidden_layers_size[i] + j];
             }
             delta[i][j] = error * dact(mlp->neuron_activations[i][j]);
