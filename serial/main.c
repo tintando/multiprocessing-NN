@@ -5,9 +5,9 @@ typedef struct MLP {
     int input_size;
     int output_size;
     int num_hidden_layers;
-    int *hidden_layers_size;
+    int *hidden_layers_size; 
     double **neuron_activations;
-    double **weights;
+    double **weights;   //weights 6 neuroni 2   layer[neurone*weight]       weights[layer][]
     double **biases;
 } MLP;
 
@@ -100,7 +100,7 @@ void matrixMultiplyAndAddBias(double *output, double *input, double *weights, do
         output[i] = 0.0; // Initialize output neuron activation 
         // Perform weighted sum of inputs for this neuron
         for (int j = 0; j < inputSize; j++) {
-            output[i] += input[j] * weights[i * inputSize + j];
+            output[i] += input[j] * weights[i * inputSize + j]; 
         }
         // Add bias for this neuron
         output[i] += biases[i];
@@ -219,7 +219,7 @@ void backpropagation(MLP *mlp, double *input, double *target, ActivationFunction
     free(delta);
 }
 
-
+//dataset[sample][features]
 
 void trainMLP(MLP *mlp, double **dataset, double **targets, int num_samples, int num_epochs, double learning_rate, int batch_size, ActivationFunction act, ActivationFunctionDerivative dact) {
     for (int epoch = 0; epoch < num_epochs; epoch++) {
