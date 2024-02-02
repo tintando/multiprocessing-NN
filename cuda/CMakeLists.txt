@@ -7,7 +7,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 find_package(CUDA REQUIRED)
 
-add_executable(main main.cu src/device_info.cu)
+add_executable(main main.cu src/device_info.cu src/data_loading.cu)
 
 set_property(TARGET main 
              PROPERTY CUDA_SEPARABLE_COMPILATION ON)
