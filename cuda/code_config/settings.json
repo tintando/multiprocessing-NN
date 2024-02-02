@@ -1,0 +1,5 @@
+{
+    "cmake.sourceDirectory": "/home/tintando/Documents/multiprocessing-NN/cuda", //where the CMakeLists.txt is
+    "C_Cpp.default.compilerPath": "/usr/bin/nvcc",
+    "cmake.buildDirectory": "${workspaceFolder}/cuda/build" //where the build files are placed
+}
