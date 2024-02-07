@@ -3,14 +3,14 @@
 #include <sstream>
 #include <string>
 
-#define n_features 8
-
+#define N_FEATURES 8
+#define N_LABELS 1
 struct Sample {
-    float features[n_features];
+    float features[N_FEATURES];
     float label;
 };
 
-Sample* readDataset(const char* filePath) {
+Sample* readDataset(const char* filePath, int* n_samples) {
     // Open the file
     std::ifstream file(filePath);
     if (!file.is_open()) {
@@ -26,7 +26,7 @@ Sample* readDataset(const char* filePath) {
     }
     file.clear();
     file.seekg(0, std::ios::beg);
-
+    *n_samples = numSamples;
     // Allocate memory for the array of structs
     Sample* samples = new Sample[numSamples];
 
@@ -36,7 +36,7 @@ Sample* readDataset(const char* filePath) {
         std::istringstream iss(line);
         
         // Read the features
-        for (int j = 0; j < n_features; j++) {
+        for (int j = 0; j < N_FEATURES; j++) {
             std::string feature;
             std::getline(iss, feature, ',');
             samples[i].features[j] = std::stof(feature);
@@ -55,9 +55,10 @@ Sample* readDataset(const char* filePath) {
 }
 
 void printSamples(Sample* samples, int n) {
+    printf("Size of Sample: %lu bytes\n", sizeof(Sample));
     for (int i = 0; i < n; i++) {
         printf("Sample %d: ", i);
-        for (int j = 0; j < n_features; j++) {
+        for (int j = 0; j < N_FEATURES; j++) {
             printf("%.2f ", samples[i].features[j]);
         }
         printf("Label: %.2f\n", samples[i].label);

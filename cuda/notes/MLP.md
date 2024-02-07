@@ -27,11 +27,12 @@ W_i_columns = i layer size
 |b_i| = i layer size
 
 eg.
-[16, 8, 8, 4]
+input --- output
+[8, 16, 8, 1]
 
-W_0 = 16x8, b_0 = 8
-W_1 = 8x8, b_1 = 8
-W_2 = 8x4, b_2 = 4
+W_0 = 8x16, b_0 = 16
+W_1 = 16x8, b_1 = 8
+W_2 = 8x1, b_2 = 1
 ```
 Store all a_i and logit_i (before afunc)
 
@@ -48,3 +49,18 @@ Store all a_i and logit_i (before afunc)
 	1. g_b = d^l
 	2. `g_w_jk = a_k^(l-1)*d_j^l` 
 ![[backprop.png]]
+
+struct MLP {
+
+int n_layers;
+int* layers; //array of hidden layer sizes
+float** weights; //array of pointers to arrays of floats (linearized matrices)
+float** biases; //array of pointers to arrays of floats
+float** activations; //array of pointers to arrays of floats
+float** logits; //array of pointers to arrays of floats
+float** gradients; //array of pointers to arrays of floats (linearizzed matrices)
+float** deltas; //array of pointers to arrays of floats
+float* inputs; //array of floats
+float* labels; //array of floats
+
+};

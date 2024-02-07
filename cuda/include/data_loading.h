@@ -6,6 +6,6 @@ struct Sample {
     float label;
 };
 
-Sample* readDataset(const char* filePath);
+Sample* readDataset(const char* filePath, int* n_samples);
 void printSamples(Sample* samples, int n);
 #endif // DATA_LOADING_H
