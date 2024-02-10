@@ -405,31 +405,31 @@ void loadAndPrepareDataset(const char* filename, double ***dataset, double ***ta
 }
 
 //splits the dataset in train, validation and test set
-void splitDataset(int* train_size, int* test_size, int* validation_size, 
+void splitDataset(int train_size, int test_size, int validation_size, 
                 double*** train_data, double*** train_targets, 
                 double*** test_data, double*** test_targets, 
                 double*** validation_data, double*** validation_targets, 
                 double*** dataset, double*** targets, int n_samples){
 
-    *train_data = (double **)malloc(*train_size * sizeof(double *));
-    *train_targets = (double **)malloc(*train_size * sizeof(double *));
-    *validation_data = (double **)malloc(*validation_size * sizeof(double *));
-    *validation_targets = (double **)malloc(*validation_size * sizeof(double *));
-    *test_data = (double **)malloc(*test_size * sizeof(double *));
-    *test_targets = (double **)malloc(*test_size * sizeof(double *));
+    *train_data = (double **)malloc(train_size * sizeof(double *));
+    *train_targets = (double **)malloc(train_size * sizeof(double *));
+    *validation_data = (double **)malloc(validation_size * sizeof(double *));
+    *validation_targets = (double **)malloc(validation_size * sizeof(double *));
+    *test_data = (double **)malloc(test_size * sizeof(double *));
+    *test_targets = (double **)malloc(test_size * sizeof(double *));
     //
-    for (int i = 0; i < *train_size; i++) {
+    for (int i = 0; i < train_size; i++) {
         (*train_data)[i] = *dataset[i];
         (*train_targets)[i] = *targets[i];
-    for (int i = *train_size; i < *train_size + *test_size; i++) {
-        (*validation_data)[i - *train_size] = *dataset[i];
-        (*validation_targets)[i - *train_size] = *targets[i];
+    for (int i = train_size; i < train_size + test_size; i++) {
+        (*validation_data)[i - train_size] = *dataset[i];
+        (*validation_targets)[i - train_size] = *targets[i];
     }
-    for (int i = *train_size; i < *validation_size; i++) {
-        (*test_data)[i - (*train_size + *validation_size)] = *dataset[i];
-        (*test_targets)[i - (*train_size + *validation_size)] = *targets[i];
-
-    }
+    for (int i = train_size; i < validation_size; i++) {
+        (*test_data)[i - (train_size + validation_size)] = *dataset[i];
+        (*test_targets)[i - (train_size + validation_size)] = *targets[i];
+        }
+    } 
 }
 
 int main(int argc, char *argv[]){
@@ -440,7 +440,10 @@ int main(int argc, char *argv[]){
 
     // Load and prepare the dataset
     loadAndPrepareDataset(filename, &dataset, &targets, &n_samples);
-
+    double **train_data = NULL, **train_targets = NULL, **test_data = NULL,
+           **test_targets = NULL, **validation_data = NULL, **validation_targets = NULL;
+    int train_size = (int)(n_samples*60/100), test_size = (int)(n_samples*40/100), validation_size = 0;
+    splitDataset(train_size, test_size, validation_size, &train_data, &train_targets, &test_data, &test_targets, &validation_data, &validation_targets, &dataset, &targets, n_samples);
     
     // Initialize your MLP
     int input_size = N_FEATURES; // Define according to your dataset
@@ -458,7 +461,7 @@ int main(int argc, char *argv[]){
     
 
     // Train MLP
-    trainMLP(mlp, dataset, targets, n_samples, num_epochs, learning_rate, batch_size, sigmoid, dsigmoid);
+    trainMLP(mlp, train_data, train_targets, n_samples, num_epochs, learning_rate, batch_size, sigmoid, dsigmoid);
 
     // Clean up
     for (int i = 0; i < n_samples; i++) {
