@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+#include "include/data_loading.h"
 
 #define output_layer 1
 #define previous_layer current_layer-1
@@ -44,7 +45,7 @@ double sigmoid(double x);
 double dsigmoid(double x);
 double relu(double x);
 double drelu(double x);
-double tanh(double x);
+//double tanh(double x) already in math.h
 double dtanh(double x);
 void matrixMultiplyAndAddBias(double *output, double *input, double *weights, double *biases, int inputSize, int outputSize);
 void applyActivationFunction(double *layer, int size, ActivationFunction activationFunc);
@@ -323,9 +324,6 @@ double drelu(double x) {
     return x > 0 ? 1 : 0;
 }
 
-double tanh(double x) {
-    return tanh(x);
-}
 
 double dtanh(double x) {
     double tanh_x = tanh(x);
@@ -356,4 +354,17 @@ void applyActivationFunction(double *layer, int size, ActivationFunction activat
     for (int i = 0; i < size; i++) {
         layer[i] = activationFunc(layer[i]);
     }
+}
+
+
+int main(int argc, char *argv[]){
+    char* filename = "serial/datasets/california.csv";
+
+    // Read the dataset
+    int n_samples;
+    Sample* samples = readDataset(filename, &n_samples);
+    printf("Number of samples: %d\n", n_samples);
+    printSamples(samples, 5);
+
+    return 0;
 }
