@@ -426,8 +426,7 @@ void splitDataset(int *train_size, int *test_size, int *validation_size,
         (*train_targets)[i][0] = (*targets)[i][0];
         printf("\ntarget: %f\n", (*train_targets)[i][0]);
     }
-    printf("PORCODDIO \n");
-    printf("%f", *test_size);
+    printf("%d", *test_size);
     *test_data = (double**) malloc(*test_size * sizeof(double*));
     *test_targets = (double**) malloc(*test_size * sizeof(double*));
     for (int i = 0; i < *test_size; i++) {
@@ -436,13 +435,10 @@ void splitDataset(int *train_size, int *test_size, int *validation_size,
         printf("test %d: ", i);
         for (int j=0; j<N_FEATURES; j++){
             (*test_data)[i][j] = (*dataset)[i + *train_size][j];
-            printf("%f, ", (*test_data)[i][j]);
         }
         (*test_targets)[i][0] = (*targets)[i + *train_size][0];
-        printf("\test target: %f\n", (*test_targets)[i][0]);
     }
-    printf("PORCODDIO \n");
-    printf("%f", *validation_size);
+    printf("%d", *validation_size);
     *validation_data = (double**) malloc(*validation_size * sizeof(double*));
     *validation_targets = (double**) malloc(*validation_size * sizeof(double*));
     for (int i = 0; i < *validation_size; i++) {
@@ -456,11 +452,11 @@ void splitDataset(int *train_size, int *test_size, int *validation_size,
         (*test_targets)[i][0] = (*targets)[i+ *train_size + *validation_size][0];
         printf("\test target: %f\n", (*test_targets)[i][0]);
     }
-                }
+}
 
 int main(int argc, char *argv[]){
 
-    const char* filename = "/home/lexyo/Documenti/Dev/Multicore/multiprocessing-NN/serial/datasets/california.csv";
+    const char* filename = "/home/pavka/multiprocessing-NN/serial/datasets/california.csv";
     double **dataset = NULL, **targets = NULL;
     int n_samples = 0;
 
