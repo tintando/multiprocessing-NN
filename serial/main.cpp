@@ -244,7 +244,6 @@ void backpropagation(MLP *mlp, double **inputs, double **targets, int current_ba
             for (int input_neuron = 0; input_neuron < size_in; input_neuron++) {
                 // Calculate mean gradient
                 double mean_grad = grad_weights_accumulators[current_layer][neuron][input_neuron] / current_batch_size;
-                printf("gradient mean is: %f\n", mean_grad);
                 // Update weights
                 mlp->weights[current_layer][neuron * size_in + input_neuron] += learning_rate * mean_grad;
             }
@@ -363,13 +362,13 @@ void applyActivationFunction(double *layer, int size, ActivationFunction activat
 
 void loadAndPrepareDataset(const char* filename, double ***dataset, double ***targets, int *n_samples) {
     // Read the dataset
-    Sample* samples = readDataset(filename, n_samples);
+    Sample* samples = readDataset(filename, n_samples);//returns a 1D array
     if (!samples || *n_samples <= 0) {
         printf("Error reading dataset or dataset is empty.\n");
         return;
     }
 
-    // Allocate memory for the host features and labels
+    // Allocate memory to split the array in labels and features
     float* h_features = (float*)malloc(*n_samples * N_FEATURES * sizeof(float));
     float* h_labels = (float*)malloc(*n_samples * N_LABELS * sizeof(float));
     if (!h_features || !h_labels) {
@@ -403,6 +402,34 @@ void loadAndPrepareDataset(const char* filename, double ***dataset, double ***ta
     // Free temporary host memory
     free(h_features);
     free(h_labels);
+}
+
+//splits the dataset in train, validation and test set
+void splitDataset(int* train_size, int* test_size, int* validation_size, 
+                double*** train_data, double*** train_targets, 
+                double*** test_data, double*** test_targets, 
+                double*** validation_data, double*** validation_targets, 
+                double*** dataset, double*** targets, int n_samples){
+
+    *train_data = (double **)malloc(*train_size * sizeof(double *));
+    *train_targets = (double **)malloc(*train_size * sizeof(double *));
+    *validation_data = (double **)malloc(*validation_size * sizeof(double *));
+    *validation_targets = (double **)malloc(*validation_size * sizeof(double *));
+    *test_data = (double **)malloc(*test_size * sizeof(double *));
+    *test_targets = (double **)malloc(*test_size * sizeof(double *));
+    //
+    for (int i = 0; i < *train_size; i++) {
+        (*train_data)[i] = *dataset[i];
+        (*train_targets)[i] = *targets[i];
+    for (int i = *train_size; i < *train_size + *test_size; i++) {
+        (*validation_data)[i - *train_size] = *dataset[i];
+        (*validation_targets)[i - *train_size] = *targets[i];
+    }
+    for (int i = *train_size; i < *validation_size; i++) {
+        (*test_data)[i - (*train_size + *validation_size)] = *dataset[i];
+        (*test_targets)[i - (*train_size + *validation_size)] = *targets[i];
+
+    }
 }
 
 int main(int argc, char *argv[]){
