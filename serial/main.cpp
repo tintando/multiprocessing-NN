@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 #include <math.h>
 #include "include/data_loading.h"
 #include <string.h>
@@ -42,8 +43,9 @@ typedef double (*ActivationFunctionDerivative)(double);
 MLP *createMLP(int input_size, int output_size, int num_hidden_layers, int *hidden_layers_size);
 void initializeXavier(double *weights, int in, int out);
 void feedforward(MLP *mlp, double *input, ActivationFunction act);
-void backpropagation(MLP *mlp, double **inputs, double **targets, int current_batch_size, ActivationFunction act, ActivationFunctionDerivative dact, double learning_rate);
+double backpropagation(MLP *mlp, double **inputs, double **targets, int current_batch_size, ActivationFunction act, ActivationFunctionDerivative dact, double learning_rate);
 void trainMLP(MLP *mlp, double **dataset, double **targets, int num_samples, int num_epochs, double learning_rate, int batch_size, ActivationFunction act, ActivationFunctionDerivative dact);
+double evaluateMLP(MLP *mlp, double **test_data, double **test_targets, int test_size, ActivationFunction act);
 double sigmoid(double x);
 double dsigmoid(double x);
 double relu(double x);
@@ -54,6 +56,7 @@ void matrixMultiplyAndAddBias(double *output, double *input, double *weights, do
 void applyActivationFunction(double *layer, int size, ActivationFunction activationFunc);
 void initializeXavier(double *weights, int in, int out);
 void loadAndPrepareDataset(const char* filename, double ***dataset, double ***targets, int *n_samples);
+void shuffleDataset(double ***dataset, double ***targets, int n_samples);
 
 // Allocates memory for the MLP structures and initializes them,
 // including the Xavier method for initializing weights.
@@ -169,7 +172,7 @@ void feedforward(MLP *mlp, double *input, ActivationFunction act) {
    Adjusts the weights and biases to minimize the error between the actual output and the predicted output by the network. 
    This function calculates gradients for weights and biases using the chain rule
    and updates them accordingly.*/
-void backpropagation(MLP *mlp, double **inputs, double **targets, int current_batch_size, ActivationFunction act, ActivationFunctionDerivative dact, double learning_rate) {
+double backpropagation(MLP *mlp, double **inputs, double **targets, int current_batch_size, ActivationFunction act, ActivationFunctionDerivative dact, double learning_rate) {
     // Initialize gradient accumulators for weights and biases to zero
     double ***grad_weights_accumulators = (double ***)malloc((mlp->num_hidden_layers + output_layer) * sizeof(double **));//[layer][current_layer_neuron][previous_layer_neuron]
     double **grad_biases_accumulator = (double **)malloc((mlp->num_hidden_layers + output_layer) * sizeof(double *));//[layer][neuron]
@@ -193,16 +196,22 @@ void backpropagation(MLP *mlp, double **inputs, double **targets, int current_ba
         delta[layer] = (double *)malloc(layer_size * sizeof(double)); // Allocate memory for each neuron delta
     }
 
+    double batch_loss = 0.0; // Initialize batch loss
+
     // Process each sample in the batch
     for (int sample = 0; sample < current_batch_size; sample++) {// for each each sample in the batch
         feedforward(mlp, inputs[sample], act);
+        double sample_loss=0.0;
         for (int i = 0; i < mlp->output_size; i++) {// for each output node
             // error = result - expected
             double output_error = targets[sample][i] - mlp->neuron_activations[mlp->num_hidden_layers][i];
             // delta = error * derivativeofactivationfunction(value_of_output_node_i) 
             delta[mlp->num_hidden_layers][i] = output_error * dact(mlp->neuron_activations[mlp->num_hidden_layers][i]); 
             //This step quantifies how each output neuron's activation needs to change to reduce the overall error.
+            sample_loss+=output_error*output_error;
+            
         }
+        batch_loss+=sample_loss;
 
         // Backpropagate the error
         //calculate delta for every hidden layer, starting from last one
@@ -226,7 +235,7 @@ void backpropagation(MLP *mlp, double **inputs, double **targets, int current_ba
             // Accumulate gradients for weights and biases per batch
             for (int neuron = 0; neuron < size_out; neuron++) {//for each neuron in current layer
                 for (int input_neuron = 0; input_neuron < size_in; input_neuron++) {// for each neuron in previous layer
-                    //grad9ient = delta[current_layer][neuron] * previous layer neuron value
+                    //gradient = delta[current_layer][neuron] * previous layer neuron value
                     double grad = delta[current_layer][neuron] * (current_layer == 0 ? inputs[sample][input_neuron] : mlp->neuron_activations[previous_layer][input_neuron]);
                     grad_weights_accumulators[current_layer][neuron][input_neuron] += grad;
                 }
@@ -265,6 +274,7 @@ void backpropagation(MLP *mlp, double **inputs, double **targets, int current_ba
     free(grad_weights_accumulators);
     free(grad_biases_accumulator);
     free(delta);
+    return batch_loss / (current_batch_size * mlp->output_size);
 }
 
 /*  mlp = Pointer to the MLP structure to be trained.
@@ -281,33 +291,47 @@ void backpropagation(MLP *mlp, double **inputs, double **targets, int current_ba
 void trainMLP(MLP *mlp, double **dataset, double **targets, int num_samples, int num_epochs, double learning_rate, int batch_size, ActivationFunction act, ActivationFunctionDerivative dact) {
     for (int epoch = 0; epoch < num_epochs; epoch++) {
         //An epoch is a single pass through the entire dataset.
+        shuffleDataset(&dataset, &targets, num_samples);
         double total_loss = 0.0; //accomulator of loss over a single epoch
         for (int i = 0; i < num_samples; i += batch_size) { // iterate through the dataset in batches.
-            int current_batch_size = (i + batch_size > num_samples) ? (num_samples - i) : batch_size;// if it's the last batch, probababy it's smaller than others
+            int current_batch_size = (i + batch_size > num_samples) ? (num_samples - i) : batch_size;// if it's the last batch, probably it's smaller than others
             double **batch_inputs = (double **)malloc(current_batch_size * sizeof(double *));// the inputs for this batch
             double **batch_targets = (double **)malloc(current_batch_size * sizeof(double *));// the labels for this batch
             for (int j = 0; j < current_batch_size; j++) {
                 batch_inputs[j] = dataset[i + j];
                 batch_targets[j] = targets[i + j];
             }
-            backpropagation(mlp, batch_inputs, batch_targets, current_batch_size, act, dact, learning_rate);
+            double batch_loss = backpropagation(mlp, batch_inputs, batch_targets, current_batch_size, act, dact, learning_rate);
             free(batch_inputs);
             free(batch_targets);
-            //compute loss for the curent batch
-            double loss = 0.0; 
-            for (int j = i; j < i + current_batch_size; j++) {//iterate over all samples in the batch
-                for (int k = 0; k < mlp->output_size; k++) {//iterate over all output neurons
-                    double error = targets[j][k] - mlp->neuron_activations[mlp->num_hidden_layers][k];//the loss for an output neuron
-                    loss += error * error;
-                }
-            }
-            //we added the loss of each neuron in the output layer, for n times, where n is the current_batch_size
-            total_loss += loss / (mlp->output_size * current_batch_size); //add to the total loss the average loss of this batch
+            
+            
+            total_loss += batch_loss; //add to the total loss the average loss of this batch
         }
         //by printing the average loss of this epoch we have an idea of how good the learning is going odd
-        total_loss /= num_samples; 
+        total_loss /= (num_samples*batch_size); 
         printf("Epoch %d, Loss: %f\n", epoch + 1, total_loss);
     }
+}
+
+double evaluateMLP(MLP *mlp, double **test_data, double **test_targets, int test_size, ActivationFunction act) {
+    double total_error = 0.0;
+    for (int i = 0; i < test_size; i++) {
+        // Feedforward to get the prediction
+        feedforward(mlp, test_data[i], act);
+
+        // Assuming the last layer's activations are the predictions
+        double *prediction = mlp->neuron_activations[mlp->num_hidden_layers];
+        
+        // Calculate error for this sample
+        for (int j = 0; j < mlp->output_size; j++) {
+            double error = test_targets[i][j] - prediction[j];
+            total_error += error * error; // For MSE, sum the squared error
+        }
+    }
+
+    // Return average MSE over the test set
+    return total_error / (test_size * mlp->output_size);
 }
 
 double sigmoid(double x) {
@@ -404,6 +428,25 @@ void loadAndPrepareDataset(const char* filename, double ***dataset, double ***ta
     free(h_labels);
 }
 
+void shuffleDataset(double ***dataset, double ***targets, int n_samples) {
+    srand(time(NULL)); // Seed the random number generator with current time
+
+    for (int i = 0; i < n_samples - 1; i++) {
+        int j = i + rand() / (RAND_MAX / (n_samples - i) + 1); // Generate a random index from i to n_samples-1
+
+        // Swap dataset[i] and dataset[j]
+        double *temp_dataset = (*dataset)[i];
+        (*dataset)[i] = (*dataset)[j];
+        (*dataset)[j] = temp_dataset;
+
+        // Swap targets[i] and targets[j] similarly
+        double *temp_targets = (*targets)[i];
+        (*targets)[i] = (*targets)[j];
+        (*targets)[j] = temp_targets;
+    }
+}
+
+
 //splits the dataset in train, validation and test set
 void splitDataset(int train_size, int test_size, int validation_size, 
                 double*** train_data, double*** train_targets, 
@@ -434,35 +477,35 @@ void splitDataset(int train_size, int test_size, int validation_size,
 
 int main(int argc, char *argv[]){
 
-    const char* filename = "/home/lexyo/Documenti/Dev/Multicore/multiprocessing-NN/serial/datasets/california.csv";
+    const char* filename = "/home/pavka/multiprocessing-NN/serial/datasets/newyork.csv";
     double **dataset = NULL, **targets = NULL;
     int n_samples = 0;
 
     // Load and prepare the dataset
     loadAndPrepareDataset(filename, &dataset, &targets, &n_samples);
-    double **train_data = NULL, **train_targets = NULL, **test_data = NULL,
-            **test_targets = NULL, **validation_data = NULL, **validation_targets = NULL;
-    int train_size = (int)(n_samples*60/100), test_size = (int)(n_samples*40/100), validation_size = 0;
-    printf("%d, %d\n", train_size, test_size);
-     splitDataset(train_size, test_size, validation_size, &train_data, &train_targets, &test_data, &test_targets, &validation_data, &validation_targets, &dataset, &targets, n_samples);
+    // double **train_data = NULL, **train_targets = NULL, **test_data = NULL,
+    //         **test_targets = NULL, **validation_data = NULL, **validation_targets = NULL;
+    // int train_size = (int)(n_samples*80/100), test_size = (int)(n_samples*20/100), validation_size = 0;
+    // printf("%d, %d\n", train_size, test_size);
+     //splitDataset(train_size, test_size, validation_size, &train_data, &train_targets, &test_data, &test_targets, &validation_data, &validation_targets, &dataset, &targets, n_samples);
     
     // Initialize your MLP
     int input_size = N_FEATURES; // Define according to your dataset
     int output_size = N_LABELS; // Typically 1 for regression tasks
-    int num_hidden_layers = 2; // Example: 2 hidden layers
-    int hidden_layers_size[] = {3, 2}; // Example sizes for the hidden layers
+    int num_hidden_layers = 3; // Example: 2 hidden layers
+    int hidden_layers_size[] = {8, 4,2}; // Example sizes for the hidden layers
     MLP *mlp = createMLP(input_size, output_size, num_hidden_layers, hidden_layers_size);
 
     // Define learning parameters
     double learning_rate = 0.01;
-    int num_epochs = 100;
-    int batch_size = 32; // Adjust based on your dataset size and memory constraints
+    int num_epochs = 500;
+    int batch_size = 1024; // Adjust based on your dataset size and memory constraints
 
     
     
 
     // Train MLP
-    //trainMLP(mlp, train_data, train_targets, n_samples, num_epochs, learning_rate, batch_size, sigmoid, dsigmoid);
+    trainMLP(mlp, dataset, targets, n_samples, num_epochs, learning_rate, batch_size, sigmoid, dsigmoid);
 
     // Clean up
     for (int i = 0; i < n_samples; i++) {
