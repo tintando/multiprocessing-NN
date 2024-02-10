@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.8 FATAL_ERROR)
 project(cuda_project LANGUAGES CXX CUDA)
 
 set(CMAKE_BUILD_TYPE Debug)
-set(CMAKE_CUDA_FLAGS_DEBUG "-G")
+set(CMAKE_CUDA_FLAGS_DEBUG "-G -g")
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 find_package(CUDA REQUIRED)
