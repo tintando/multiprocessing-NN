@@ -495,7 +495,7 @@ int main(int argc, char *argv[]){
     loadAndPrepareDataset(filename, &dataset, &targets, &n_samples);
     double **train_data = NULL, **train_targets = NULL, **test_data = NULL,
             **test_targets = NULL, **validation_data = NULL, **validation_targets = NULL;
-    int train_size = (int)(n_samples*60/100), test_size = (int)(n_samples*40/100), validation_size = 0;
+    int train_size = (int)(n_samples*80/100), test_size = (int)(n_samples*20/100), validation_size = 0;
     if(train_size+test_size!=n_samples){
         return 1;
     }
@@ -504,12 +504,12 @@ int main(int argc, char *argv[]){
     int input_size = N_FEATURES; // Define according to your dataset
     int output_size = N_LABELS; // Typically 1 for regression tasks
     int num_hidden_layers = 2; // Example: 2 hidden layers
-    int hidden_layers_size[] = {3, 2}; // Example sizes for the hidden layers
+    int hidden_layers_size[] = {5, 2}; // Example sizes for the hidden layers
     MLP *mlp = createMLP(input_size, output_size, num_hidden_layers, hidden_layers_size);
 
     // Define learning parameters
     double learning_rate = 0.01;
-    int num_epochs = 100;
+    int num_epochs = 500;
     int batch_size = 32; // Adjust based on your dataset size and memory constraints
     // Train MLP
     trainMLP(mlp, train_data, train_targets, train_size, num_epochs, learning_rate, batch_size, sigmoid, dsigmoid);
