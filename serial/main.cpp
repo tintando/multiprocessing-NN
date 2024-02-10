@@ -244,6 +244,7 @@ void backpropagation(MLP *mlp, double **inputs, double **targets, int current_ba
             for (int input_neuron = 0; input_neuron < size_in; input_neuron++) {
                 // Calculate mean gradient
                 double mean_grad = grad_weights_accumulators[current_layer][neuron][input_neuron] / current_batch_size;
+                printf("gradient mean is: %f\n", mean_grad);
                 // Update weights
                 mlp->weights[current_layer][neuron * size_in + input_neuron] += learning_rate * mean_grad;
             }
@@ -418,7 +419,7 @@ int main(int argc, char *argv[]){
     int input_size = N_FEATURES; // Define according to your dataset
     int output_size = N_LABELS; // Typically 1 for regression tasks
     int num_hidden_layers = 2; // Example: 2 hidden layers
-    int hidden_layers_size[] = {6, 4}; // Example sizes for the hidden layers
+    int hidden_layers_size[] = {3, 2}; // Example sizes for the hidden layers
     MLP *mlp = createMLP(input_size, output_size, num_hidden_layers, hidden_layers_size);
 
     // Define learning parameters
@@ -430,7 +431,7 @@ int main(int argc, char *argv[]){
     
 
     // Train MLP
-    trainMLP(mlp, dataset, targets, n_samples, num_epochs, learning_rate, batch_size, relu, drelu);
+    trainMLP(mlp, dataset, targets, n_samples, num_epochs, learning_rate, batch_size, sigmoid, dsigmoid);
 
     // Clean up
     for (int i = 0; i < n_samples; i++) {
