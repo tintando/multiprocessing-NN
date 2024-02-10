@@ -4,6 +4,7 @@
 #include <math.h>
 #include "include/data_loading.h"
 #include <string.h>
+#include <pthread.h>
 
 #define output_layer 1
 #define previous_layer current_layer-1
@@ -33,6 +34,19 @@ typedef struct MLP {
     double **biases;
 } MLP;
 
+typedef struct ThreadData {
+    MLP *mlp;
+    double **inputs;
+    double **targets;
+    int start_idx;
+    int end_idx;
+    ActivationFunction act;
+    ActivationFunctionDerivative dact;
+    double learning_rate;
+    double ***grad_weights_accumulators;
+    double **grad_biases_accumulator;
+} ThreadData;   
+
 //pointers for activation functions: Relu, sigmoid, tahn
 typedef double (*ActivationFunction)(double);
 //pointers for derivative of activation functions: dRelu, dsigmoid, dtahn
@@ -57,6 +71,9 @@ void applyActivationFunction(double *layer, int size, ActivationFunction activat
 void initializeXavier(double *weights, int in, int out);
 void loadAndPrepareDataset(const char* filename, double ***dataset, double ***targets, int *n_samples);
 void shuffleDataset(double ***dataset, double ***targets, int n_samples);
+void *threadTrainFunc(void *thread_data);
+void aggregateAndApplyGradients(MLP *mlp, ThreadData *tdata, int num_threads, int batch_size, int input_size);
+
 
 // Allocates memory for the MLP structures and initializes them,
 // including the Xavier method for initializing weights.
@@ -172,8 +189,6 @@ void feedforward(MLP *mlp, double *input, ActivationFunction act) {
    Adjusts the weights and biases to minimize the error between the actual output and the predicted output by the network. 
    This function calculates gradients for weights and biases using the chain rule
    and updates them accordingly.*/
-#include <cstdlib> // for malloc and free
-#include <cmath> // for pow
 
 double backpropagation(MLP *mlp, double **inputs, double **targets, int current_batch_size, ActivationFunction act, ActivationFunctionDerivative dact, double learning_rate) {
     // Initialize gradient accumulators for weights and biases to zero
@@ -465,6 +480,81 @@ void splitDataset(int *train_size, int *test_size, int *validation_size,
         (*test_targets)[i][0] = (*targets)[i+ *train_size + *validation_size][0];
     }
 }
+
+
+void trainMLPWithPthreads(MLP *mlp, double **dataset, double **targets, int num_samples, int num_epochs, double learning_rate, int batch_size, ActivationFunction act, ActivationFunctionDerivative dact, int num_threads) {
+    pthread_t threads[num_threads];
+    ThreadData tdata[num_threads];
+
+    for (int epoch = 0; epoch < num_epochs; ++epoch) {
+        // Shuffle dataset at the beginning of each epoch
+
+        for (int batch_start = 0; batch_start < num_samples; batch_start += batch_size) {
+            int current_batch_size = batch_start + batch_size > num_samples ? num_samples - batch_start : batch_size;
+
+            // Initialize thread data for each thread
+            for (int i = 0; i < num_threads; ++i) {
+                int start_idx = i * (current_batch_size / num_threads);
+                int end_idx = (i + 1) * (current_batch_size / num_threads) - 1;
+                if (i == num_threads - 1) {
+                    // Ensure the last thread picks up any remaining samples due to integer division
+                    end_idx = current_batch_size - 1;
+                }
+
+                // Adjust start and end index based on the batch_start
+                start_idx += batch_start;
+                end_idx += batch_start;
+
+                tdata[i].mlp = mlp;
+                tdata[i].inputs = dataset + start_idx;
+                tdata[i].targets = targets + start_idx;
+                tdata[i].start_idx = start_idx;
+                tdata[i].end_idx = end_idx;
+                tdata[i].act = act;
+                tdata[i].dact = dact;
+                tdata[i].learning_rate = learning_rate;
+
+                // Allocate memory for gradients; to be implemented by the user
+                // Example: tdata[i].grad_weights_accumulators = allocateGradientStorage(...);
+                // Example: tdata[i].grad_biases_accumulator = allocateGradientStorage(...);
+
+                pthread_create(&threads[i], NULL, threadTrainFunc, (void*)&tdata[i]);
+            }
+
+            // Join threads and aggregate gradients
+            for (int i = 0; i < num_threads; ++i) {
+                pthread_join(threads[i], NULL);
+            }
+
+            // Aggregate gradients and update weights; to be implemented by the user
+            // Example: aggregateAndApplyGradients(mlp, tdata, num_threads, current_batch_size, mlp->input_size);
+        }
+        // Optionally, print epoch and loss information here
+    }
+
+    // Cleanup allocations for gradients; to be implemented by the user
+}
+
+
+void *threadTrainFunc(void *thread_data) {
+    ThreadData *data = (ThreadData*) thread_data;
+    // Implement the feedforward and backpropagation for the subset of data
+    // Store computed gradients in thread-local structures
+    // Remember to correctly index into the global dataset based on start_idx and end_idx
+    // Example: feedforward and backpropagation logic here
+
+    // The actual implementation would involve adjusting the existing backpropagation
+    // function or creating a new one that can handle partial datasets and store gradients locally
+
+    pthread_exit(NULL);
+}
+
+void aggregateAndApplyGradients(MLP *mlp, ThreadData *tdata, int num_threads, int batch_size, int input_size) {
+    // This function should aggregate gradients from all threads and then update the global weights and biases
+    // Ensure this operation is thread-safe if using threads outside of the main training loop
+    // Example: Loop over all threads, aggregate their stored gradients, then update MLP weights and biases accordingly
+}
+
 
 int main(int argc, char *argv[]){
 

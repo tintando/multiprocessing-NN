@@ -489,7 +489,7 @@ int main(int argc, char *argv[]){
     MLP *mlp = createMLP(input_size, output_size, num_hidden_layers, hidden_layers_size);
 
     // Define learning parameters
-    double learning_rate = 0.01;
+    double learning_rate = 0.001;
     int num_epochs = 500;
     int batch_size = 64; // Adjust based on your dataset size and memory constraints
     // Train MLP
