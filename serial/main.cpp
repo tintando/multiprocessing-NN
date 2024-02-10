@@ -453,47 +453,35 @@ void splitDataset(int *train_size, int *test_size, int *validation_size,
                 double*** test_data, double*** test_targets, 
                 double*** validation_data, double*** validation_targets, 
                 double*** dataset, double*** targets, int *n_samples){
-    printf("split dataset:\n");
-    printf("allocating arrays of pointers to samples:\n");
     *train_data = (double**) malloc(*train_size * sizeof(double*));
     *train_targets = (double**) malloc(*train_size * sizeof(double*));
-    printf("allocating arrays of pointers to features:\n");
     for (int i = 0; i < *train_size; i++) {
         (*train_data)[i] = (double*) malloc(N_FEATURES * sizeof(double));
         (*train_targets)[i] = (double*) malloc(N_LABELS * sizeof(double));
-        printf("%d: ", i);
         for (int j=0; j<N_FEATURES; j++){
             (*train_data)[i][j] = (*dataset)[i][j];
-            printf("%f, ", (*train_data)[i][j]);
         }
         (*train_targets)[i][0] = (*targets)[i][0];
-        printf("\ntarget: %f\n", (*train_targets)[i][0]);
     }
-    printf("%d", *test_size);
     *test_data = (double**) malloc(*test_size * sizeof(double*));
     *test_targets = (double**) malloc(*test_size * sizeof(double*));
     for (int i = 0; i < *test_size; i++) {
         (*test_data)[i] = (double*) malloc(N_FEATURES * sizeof(double));
         (*test_targets)[i] = (double*) malloc(N_LABELS * sizeof(double));
-        printf("test %d: ", i);
         for (int j=0; j<N_FEATURES; j++){
             (*test_data)[i][j] = (*dataset)[i + *train_size][j];
         }
         (*test_targets)[i][0] = (*targets)[i + *train_size][0];
     }
-    printf("%d", *validation_size);
     *validation_data = (double**) malloc(*validation_size * sizeof(double*));
     *validation_targets = (double**) malloc(*validation_size * sizeof(double*));
     for (int i = 0; i < *validation_size; i++) {
         (*validation_data)[i] = (double*) malloc(N_FEATURES * sizeof(double));
         (*validation_targets)[i] = (double*) malloc(N_LABELS * sizeof(double));
-        printf("test %d: ", i);
         for (int j=0; j<N_FEATURES; j++){
             (*validation_data)[i][j] = (*dataset)[i + *train_size + *test_size][j];
-            printf("%f, ", (*validation_data)[i][j]);
         }
         (*test_targets)[i][0] = (*targets)[i+ *train_size + *validation_size][0];
-        printf("\test target: %f\n", (*test_targets)[i][0]);
     }
 }
 
@@ -524,7 +512,9 @@ int main(int argc, char *argv[]){
     int num_epochs = 100;
     int batch_size = 32; // Adjust based on your dataset size and memory constraints
     // Train MLP
-    trainMLP(mlp, train_data, train_targets, n_samples, num_epochs, learning_rate, batch_size, sigmoid, dsigmoid);
+    trainMLP(mlp, train_data, train_targets, train_size, num_epochs, learning_rate, batch_size, sigmoid, dsigmoid);
+    double error = evaluateMLP(mlp,test_data,test_targets,test_size, sigmoid);
+    printf("error is %f\n",error);
 
     // Clean up
     for (int i = 0; i < n_samples; i++) {
