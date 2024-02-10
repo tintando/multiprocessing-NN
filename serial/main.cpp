@@ -462,15 +462,15 @@ int main(int argc, char *argv[]){
     int output_size = N_LABELS; // Typically 1 for regression tasks
     int num_hidden_layers = 2; // Example: 2 hidden layers
     int hidden_layers_size[] = {3, 2}; // Example sizes for the hidden layers
-    //MLP *mlp = createMLP(input_size, output_size, num_hidden_layers, hidden_layers_size);
+    MLP *mlp = createMLP(input_size, output_size, num_hidden_layers, hidden_layers_size);
 
     // Define learning parameters
     double learning_rate = 0.01;
     int num_epochs = 100;
     int batch_size = 32; // Adjust based on your dataset size and memory constraints
     // Train MLP
-    // trainMLP(mlp, train_data, train_targets, n_samples, num_epochs, learning_rate, batch_size, sigmoid, dsigmoid);
-
+    trainMLP(mlp, train_data, train_targets, n_samples, num_epochs, learning_rate, batch_size, sigmoid, dsigmoid);
+    
     // Clean up
     for (int i = 0; i < n_samples; i++) {
         free(dataset[i]);
