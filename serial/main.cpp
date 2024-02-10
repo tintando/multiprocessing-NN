@@ -172,97 +172,78 @@ void feedforward(MLP *mlp, double *input, ActivationFunction act) {
    Adjusts the weights and biases to minimize the error between the actual output and the predicted output by the network. 
    This function calculates gradients for weights and biases using the chain rule
    and updates them accordingly.*/
+#include <cstdlib> // for malloc and free
+#include <cmath> // for pow
+
 double backpropagation(MLP *mlp, double **inputs, double **targets, int current_batch_size, ActivationFunction act, ActivationFunctionDerivative dact, double learning_rate) {
     // Initialize gradient accumulators for weights and biases to zero
-    double ***grad_weights_accumulators = (double ***)malloc((mlp->num_hidden_layers + output_layer) * sizeof(double **));//[layer][current_layer_neuron][previous_layer_neuron]
-    double **grad_biases_accumulator = (double **)malloc((mlp->num_hidden_layers + output_layer) * sizeof(double *));//[layer][neuron]
+    double ***grad_weights_accumulators = (double ***)malloc((mlp->num_hidden_layers + output_layer) * sizeof(double **));
+    double **grad_biases_accumulator = (double **)malloc((mlp->num_hidden_layers + output_layer) * sizeof(double *));
     
-    for (int current_layer = 0; current_layer <= mlp->num_hidden_layers; current_layer++) {// loop trough each layer
-        int size_in = (current_layer == 0) ? mlp->input_size : mlp->hidden_layers_size[previous_layer];// size of the input at current layer
-        int size_out = (current_layer == mlp->num_hidden_layers) ? mlp->output_size : mlp->hidden_layers_size[current_layer];// size of output at current layer
-        //allocates memory to store the 2D array of weights relative to [current_layer_neuron][previous_layer_neuron]
+    for (int current_layer = 0; current_layer <= mlp->num_hidden_layers; current_layer++) {
+        int size_in = (current_layer == 0) ? mlp->input_size : mlp->hidden_layers_size[previous_layer];
+        int size_out = (current_layer == mlp->num_hidden_layers) ? mlp->output_size : mlp->hidden_layers_size[current_layer];
         grad_weights_accumulators[current_layer] = (double **)malloc(size_out * sizeof(double *));
-        //allocates memory to store the array of biases relative to the neurons of the current layer
         grad_biases_accumulator[current_layer] = (double *)calloc(size_out, sizeof(double));
-        for (int neuron = 0; neuron < size_out; neuron++) {// loop trough each neuron
-            grad_weights_accumulators[current_layer][neuron] = (double *)calloc(size_in, sizeof(double));//allocate and initialize the list of weight accumulators to 0
+        for (int neuron = 0; neuron < size_out; neuron++) {
+            grad_weights_accumulators[current_layer][neuron] = (double *)calloc(size_in, sizeof(double));
         }
     }
 
-    // [layer][neuron] Allocate memory for delta values, the error derivative with respect to the activation of each neuron.
     double **delta = (double **)malloc((mlp->num_hidden_layers + output_layer) * sizeof(double *));
-    for (int layer = 0; layer <= mlp->num_hidden_layers; layer++) {// loop trough each layer
+    for (int layer = 0; layer <= mlp->num_hidden_layers; layer++) {
         int layer_size = (layer == mlp->num_hidden_layers) ? mlp->output_size : mlp->hidden_layers_size[layer];
-        delta[layer] = (double *)malloc(layer_size * sizeof(double)); // Allocate memory for each neuron delta
+        delta[layer] = (double *)malloc(layer_size * sizeof(double));
     }
 
-    double batch_loss = 0.0; // Initialize batch loss
+    double batch_loss = 0.0;
 
-    // Process each sample in the batch
-    for (int sample = 0; sample < current_batch_size; sample++) {// for each each sample in the batch
+    for (int sample = 0; sample < current_batch_size; sample++) {
         feedforward(mlp, inputs[sample], act);
         double sample_loss=0.0;
-        for (int i = 0; i < mlp->output_size; i++) {// for each output node
-            // error = result - expected
+        for (int i = 0; i < mlp->output_size; i++) {
             double output_error = targets[sample][i] - mlp->neuron_activations[mlp->num_hidden_layers][i];
-            // delta = error * derivativeofactivationfunction(value_of_output_node_i) 
-            delta[mlp->num_hidden_layers][i] = output_error * dact(mlp->neuron_activations[mlp->num_hidden_layers][i]); 
-            //This step quantifies how each output neuron's activation needs to change to reduce the overall error.
+            delta[mlp->num_hidden_layers][i] = output_error * dact(mlp->neuron_activations[mlp->num_hidden_layers][i]);
             sample_loss+=output_error*output_error;
-            
         }
         batch_loss+=sample_loss;
 
-        // Backpropagate the error
-        //calculate delta for every hidden layer, starting from last one
         for (int current_layer = mlp->num_hidden_layers - 1; current_layer >= 0; current_layer--) {
-            int size_out = (current_layer == mlp->num_hidden_layers) ? mlp->output_size : mlp->hidden_layers_size[current_layer];// size of the output at current layer
-            int size_in = (current_layer == 0) ? mlp->input_size : mlp->hidden_layers_size[previous_layer];// size of the input at current layer
+            int size_out = (current_layer == mlp->num_hidden_layers) ? mlp->output_size : mlp->hidden_layers_size[current_layer];
+            int size_in = (current_layer == 0) ? mlp->input_size : mlp->hidden_layers_size[previous_layer];
             
-            for (int j = 0; j < size_out; j++) { //for each neuron in current layer
+            for (int j = 0; j < size_out; j++) {
                 double error = 0.0;
-                for (int k = 0; k < ((current_layer == mlp->num_hidden_layers - 1) ? 
-                                                            mlp->output_size : 
-                                                            mlp->hidden_layers_size[next_layer]); k++) {
-                    /* sum up the products of the weights connecting the neuron to the neurons in the next layer
-                    with the delta values of those next layer neurons*/
+                for (int k = 0; k < ((current_layer == mlp->num_hidden_layers - 1) ? mlp->output_size : mlp->hidden_layers_size[next_layer]); k++) {
                     error += mlp->weights[next_layer][k * size_out + j] * delta[next_layer][k];
                 }
-                //compute delta for the neuron in current layer
                 delta[current_layer][j] = error * dact(mlp->neuron_activations[current_layer][j]);
             }
 
-            // Accumulate gradients for weights and biases per batch
-            for (int neuron = 0; neuron < size_out; neuron++) {//for each neuron in current layer
-                for (int input_neuron = 0; input_neuron < size_in; input_neuron++) {// for each neuron in previous layer
-                    //gradient = delta[current_layer][neuron] * previous layer neuron value
+            for (int neuron = 0; neuron < size_out; neuron++) {
+                for (int input_neuron = 0; input_neuron < size_in; input_neuron++) {
                     double grad = delta[current_layer][neuron] * (current_layer == 0 ? inputs[sample][input_neuron] : mlp->neuron_activations[previous_layer][input_neuron]);
                     grad_weights_accumulators[current_layer][neuron][input_neuron] += grad;
                 }
-                grad_biases_accumulator[current_layer][neuron] += delta[current_layer][neuron];//accumulate deltas 
+                grad_biases_accumulator[current_layer][neuron] += delta[current_layer][neuron];
             }
         }
     }
-    // batch computed
-    // Apply mean gradients to update weights and biases
+
     for (int current_layer = 0; current_layer <= mlp->num_hidden_layers; current_layer++) {
         int size_in = (current_layer == 0) ? mlp->input_size : mlp->hidden_layers_size[previous_layer];
         int size_out = (current_layer == mlp->num_hidden_layers) ? mlp->output_size : mlp->hidden_layers_size[current_layer];
         
-        for (int neuron = 0; neuron < size_out; neuron++) {//for each neuron in current layer
+        for (int neuron = 0; neuron < size_out; neuron++) {
             for (int input_neuron = 0; input_neuron < size_in; input_neuron++) {
-                // Calculate mean gradient
                 double mean_grad = grad_weights_accumulators[current_layer][neuron][input_neuron] / current_batch_size;
-                // Update weights
                 mlp->weights[current_layer][neuron * size_in + input_neuron] += learning_rate * mean_grad;
             }
-            // Calculate mean gradient for biases and update
             double mean_grad_bias = grad_biases_accumulator[current_layer][neuron] / current_batch_size;
             mlp->biases[current_layer][neuron] += learning_rate * mean_grad_bias;
         }
     }
 
-    // Free memory allocated for gradient accumulators and delta
     for (int layer = 0; layer <= mlp->num_hidden_layers; layer++) {
         for (int neuron = 0; neuron < (layer == mlp->num_hidden_layers ? mlp->output_size : mlp->hidden_layers_size[layer]); neuron++) {
             free(grad_weights_accumulators[layer][neuron]);
@@ -309,7 +290,7 @@ void trainMLP(MLP *mlp, double **dataset, double **targets, int num_samples, int
             total_loss += batch_loss; //add to the total loss the average loss of this batch
         }
         //by printing the average loss of this epoch we have an idea of how good the learning is going odd
-        total_loss /= (num_samples*batch_size); 
+        total_loss /= (num_samples/batch_size); 
         printf("Epoch %d, Loss: %f\n", epoch + 1, total_loss);
     }
 }
@@ -510,7 +491,7 @@ int main(int argc, char *argv[]){
     // Define learning parameters
     double learning_rate = 0.01;
     int num_epochs = 500;
-    int batch_size = 32; // Adjust based on your dataset size and memory constraints
+    int batch_size = 64; // Adjust based on your dataset size and memory constraints
     // Train MLP
     trainMLP(mlp, train_data, train_targets, train_size, num_epochs, learning_rate, batch_size, sigmoid, dsigmoid);
     double error = evaluateMLP(mlp,test_data,test_targets,test_size, sigmoid);
