@@ -2,10 +2,13 @@
 #include <stdlib.h>
 #include <math.h>
 #include "include/data_loading.h"
+#include <string.h>
 
 #define output_layer 1
 #define previous_layer current_layer-1
 #define next_layer current_layer+1
+#define N_FEATURES 8
+#define N_LABELS 1
 
 /*structure of MLP
 input size = # of nodes in first layer
@@ -50,7 +53,7 @@ double dtanh(double x);
 void matrixMultiplyAndAddBias(double *output, double *input, double *weights, double *biases, int inputSize, int outputSize);
 void applyActivationFunction(double *layer, int size, ActivationFunction activationFunc);
 void initializeXavier(double *weights, int in, int out);
-
+void loadAndPrepareDataset(const char* filename, double ***dataset, double ***targets, int *n_samples);
 
 // Allocates memory for the MLP structures and initializes them,
 // including the Xavier method for initializing weights.
@@ -357,14 +360,85 @@ void applyActivationFunction(double *layer, int size, ActivationFunction activat
 }
 
 
-int main(int argc, char *argv[]){
-    char* filename = "serial/datasets/california.csv";
-
+void loadAndPrepareDataset(const char* filename, double ***dataset, double ***targets, int *n_samples) {
     // Read the dataset
-    int n_samples;
-    Sample* samples = readDataset(filename, &n_samples);
-    printf("Number of samples: %d\n", n_samples);
-    printSamples(samples, 5);
+    Sample* samples = readDataset(filename, n_samples);
+    if (!samples || *n_samples <= 0) {
+        printf("Error reading dataset or dataset is empty.\n");
+        return;
+    }
+
+    // Allocate memory for the host features and labels
+    float* h_features = (float*)malloc(*n_samples * N_FEATURES * sizeof(float));
+    float* h_labels = (float*)malloc(*n_samples * N_LABELS * sizeof(float));
+    if (!h_features || !h_labels) {
+        printf("Failed to allocate memory for features and labels.\n");
+        free(samples); // Assuming samples need to be freed here
+        return;
+    }
+
+    // Copy data from samples to h_features and h_labels
+    for (int i = 0; i < *n_samples; i++) {
+        memcpy(h_features + i * N_FEATURES, samples[i].features, N_FEATURES * sizeof(float));
+        h_labels[i] = samples[i].label;
+    }
+
+    // Assuming the responsibility to free samples is here
+    // Remember to free the samples' features if they're dynamically allocated
+    free(samples);
+
+    // Allocate memory for dataset and targets
+    *dataset = (double**) malloc(*n_samples * sizeof(double*));
+    *targets = (double**) malloc(*n_samples * sizeof(double*));
+    for (int i = 0; i < *n_samples; i++) {
+        (*dataset)[i] = (double*) malloc(N_FEATURES * sizeof(double));
+        (*targets)[i] = (double*) malloc(N_LABELS * sizeof(double));
+        for (int j = 0; j < N_FEATURES; j++) {
+            (*dataset)[i][j] = (double)h_features[i * N_FEATURES + j];
+        }
+        (*targets)[i][0] = (double)h_labels[i];
+    }
+
+    // Free temporary host memory
+    free(h_features);
+    free(h_labels);
+}
+
+int main(int argc, char *argv[]){
+
+    const char* filename = "/home/pavka/multiprocessing-NN/serial/datasets/california.csv";
+    double **dataset = NULL, **targets = NULL;
+    int n_samples = 0;
+
+    // Load and prepare the dataset
+    loadAndPrepareDataset(filename, &dataset, &targets, &n_samples);
+
+    
+    // Initialize your MLP
+    int input_size = N_FEATURES; // Define according to your dataset
+    int output_size = N_LABELS; // Typically 1 for regression tasks
+    int num_hidden_layers = 2; // Example: 2 hidden layers
+    int hidden_layers_size[] = {6, 4}; // Example sizes for the hidden layers
+    MLP *mlp = createMLP(input_size, output_size, num_hidden_layers, hidden_layers_size);
+
+    // Define learning parameters
+    double learning_rate = 0.01;
+    int num_epochs = 100;
+    int batch_size = 32; // Adjust based on your dataset size and memory constraints
+
+    
+    
+
+    // Train MLP
+    trainMLP(mlp, dataset, targets, n_samples, num_epochs, learning_rate, batch_size, relu, drelu);
+
+    // Clean up
+    for (int i = 0; i < n_samples; i++) {
+        free(dataset[i]);
+        free(targets[i]);
+    }
+    free(dataset);
+    free(targets);
 
     return 0;
 }
