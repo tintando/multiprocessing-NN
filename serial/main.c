@@ -2,29 +2,39 @@
 #include <stdlib.h>
 #include <math.h>
 
+#define output_layer 1
+#define previous_layer current_layer-1
+#define next_layer current_layer+1
+
 /*structure of MLP
-input and output size are the number of nodes in the first and last layer
-hideen_layers_size is an array that contains the number of nodes in each layer, while num_hidden layer is the len of this array,
-ex. layer1=3, layer2=6, layer3=10,layer4=2      then hidden_layer_size=[3,6,10,2] and num_hidden_layers=4
-2d array neuron_activation[layer][node]
-2d array weights[layer][i * num_of_input_node + j]  , the weights of a neuron at layer L and index I is weights[L][I*num_of_input_node + j], with 0<j<num_of_input_node
-2d array biases[layer][node]
-*/
+input size = # of nodes in first layer
+output size = # of nodes in last layer
+num_hidden_layers = # of hidden layers in neural network
+hideen_layers_size = array where each entry is the number of nodes in that layer
+ex: layer1 = 3 nodes, layer2 = 6, layer3 = 10 then hidden_layer_size=[3,6,10] and num_hidden_layers=3
+neuron_activation[layer][node] = ...
+weights[layer][hideen_layers_size[layer]*hideen_layers_size[layer-1]] =
+               = weight between a node of the current layer and a node of previous layer
+2d array biases[layer][node]*/
 typedef struct MLP {
-    int input_size;
-    int output_size;
-    int num_hidden_layers;
-    int *hidden_layers_size;
+    int input_size; // number of nodes in first layer
+    int output_size; // numebr of nodes in last layer
+    int num_hidden_layers; // numebr of hidden layers in neural network
+    int *hidden_layers_size; // array where each entry is the # of nodes in that layer
     double **neuron_activations;
-    double **weights;
+    // weight between a node of the current layer and a node of previous layer 
+    // [layer][hideen_layers_size[layer]*hideen_layers_size[layer-1]]
+    double **weights; 
     double **biases;
 } MLP;
 
-//pointers for activation functions(Relu,sigmoid,tahn)
+//pointers for activation functions: Relu, sigmoid, tahn
 typedef double (*ActivationFunction)(double);
+//pointers for derivative of activation functions: dRelu, dsigmoid, dtahn
 typedef double (*ActivationFunctionDerivative)(double);
 
-//initialize all the functions
+//initializing all the functions for the compiler :)
+
 MLP *createMLP(int input_size, int output_size, int num_hidden_layers, int *hidden_layers_size);
 void initializeXavier(double *weights, int in, int out);
 void feedforward(MLP *mlp, double *input, ActivationFunction act);
@@ -41,28 +51,30 @@ void applyActivationFunction(double *layer, int size, ActivationFunction activat
 void initializeXavier(double *weights, int in, int out);
 
 
-//constructor for MLP
+// Allocates memory for the MLP structures and initializes them,
+// including the Xavier method for initializing weights.
 MLP *createMLP(int input_size, int output_size, int num_hidden_layers, int *hidden_layers_size) {
-    MLP *mlp = (MLP *)malloc(sizeof(MLP));
-    if (!mlp) return NULL;
-
+    MLP *mlp = (MLP *)malloc(sizeof(MLP)); //mlp is the pointer to the MLP instance
+    if (!mlp) return NULL;//in case of memory errors, this function returns NULL
     mlp->input_size = input_size;
     mlp->output_size = output_size;
     mlp->num_hidden_layers = num_hidden_layers;
-
+    // allocate the array of sizes
     mlp->hidden_layers_size = (int *)malloc(num_hidden_layers * sizeof(int));
     if (!mlp->hidden_layers_size) {
         free(mlp);
         return NULL;
     }
+    //initialize the array of sizes
     for (int i = 0; i < num_hidden_layers; i++) {
         mlp->hidden_layers_size[i] = hidden_layers_size[i];
     }
-
+    // allocate neuron_activations, weights, biases
     mlp->neuron_activations = (double **)malloc((num_hidden_layers + 1) * sizeof(double *));
     mlp->weights = (double **)malloc((num_hidden_layers + 1) * sizeof(double *));
     mlp->biases = (double **)malloc((num_hidden_layers + 1) * sizeof(double *));
     if (!mlp->neuron_activations || !mlp->weights || !mlp->biases) {
+        //errors
         free(mlp->hidden_layers_size);
         if (mlp->neuron_activations) free(mlp->neuron_activations);
         if (mlp->weights) free(mlp->weights);
@@ -70,14 +82,13 @@ MLP *createMLP(int input_size, int output_size, int num_hidden_layers, int *hidd
         free(mlp);
         return NULL;
     }
-
-    int prev_layer_size = input_size;
+    // initialize neuron_activations, weights, biases
+    int prev_layer_size = input_size;//keeps track of the size of previous layer, starts with size of input
     for (int i = 0; i <= num_hidden_layers; i++) {
-        int layer_size = (i == num_hidden_layers) ? output_size : hidden_layers_size[i];
-
-        mlp->neuron_activations[i] = (double *)calloc(layer_size, sizeof(double));
-        mlp->weights[i] = (double *)malloc(prev_layer_size * layer_size * sizeof(double));
-        mlp->biases[i] = (double *)calloc(layer_size, sizeof(double));
+        int layer_size = (i == num_hidden_layers) ? output_size : hidden_layers_size[i]; //size of current layer
+        mlp->neuron_activations[i] = (double *)calloc(layer_size, sizeof(double)); // allocates and initializes to 0
+        mlp->weights[i] = (double *)malloc(prev_layer_size * layer_size * sizeof(double)); //allocates
+        mlp->biases[i] = (double *)calloc(layer_size, sizeof(double)); // allocates and initializes to 0
 
         if (!mlp->neuron_activations[i] || !mlp->weights[i] || !mlp->biases[i]) {
             for (int j = 0; j < i; j++) {
@@ -93,7 +104,7 @@ MLP *createMLP(int input_size, int output_size, int num_hidden_layers, int *hidd
             return NULL;
         }
 
-        initializeXavier(mlp->weights[i], prev_layer_size, layer_size);
+        initializeXavier(mlp->weights[i], prev_layer_size, layer_size); //initialize weights
 
         prev_layer_size = layer_size;
     }
@@ -102,151 +113,195 @@ MLP *createMLP(int input_size, int output_size, int num_hidden_layers, int *hidd
 }
 
 //popular way to initialize weights
+//helps in keeping the signal from the input to flow well into the deep network.
 void initializeXavier(double *weights, int in, int out) {
+    // in = prev_layer_size
+    // out = layer size
+    // weights = weights between nodes of previous and current layer
     double limit = sqrt(6.0 / (in + out));
     for (int i = 0; i < in * out; i++) {
         weights[i] = (rand() / (double)(RAND_MAX)) * 2 * limit - limit;
     }
 }
-
-//feedforward algorithm
+/* mlp = Pointer to the MLP structure to be trained.
+   input = A sample (array of features)
+   act = Activation function used in the neurons during forward propagation.
+   Propagates the input through the network to produce an output.
+   It computes the activations of all neurons in the network using the input data, weights, and biases.*/
 void feedforward(MLP *mlp, double *input, ActivationFunction act) {
-    //gives input
+    // gives input
     for (int i = 0; i < mlp->input_size; i++) {
+        //Initialize the activation of the input layer neurons with the input values.
         mlp->neuron_activations[0][i] = input[i];
     }
 
-    //compute zl and al
-    for (int i = 0; i < mlp->num_hidden_layers; i++) {
-        matrixMultiplyAndAddBias(mlp->neuron_activations[i + 1], mlp->neuron_activations[i], mlp->weights[i], mlp->biases[i], i == 0 ? mlp->input_size : mlp->hidden_layers_size[i - 1], mlp->hidden_layers_size[i]);
-        applyActivationFunction(mlp->neuron_activations[i + 1], mlp->hidden_layers_size[i], act);
+    // compute zl and al
+    for (int current_layer = 0; current_layer < mlp->num_hidden_layers; current_layer++) { //for each hidden layer
+        matrixMultiplyAndAddBias(mlp->neuron_activations[next_layer],
+                                mlp->neuron_activations[current_layer],
+                                mlp->weights[current_layer], mlp->biases[current_layer],
+                                current_layer == 0 ? mlp->input_size : mlp->hidden_layers_size[previous_layer],
+                                mlp->hidden_layers_size[current_layer]
+                                );
+        applyActivationFunction(mlp->neuron_activations[next_layer], mlp->hidden_layers_size[current_layer], act);
     }
-
-    matrixMultiplyAndAddBias(mlp->neuron_activations[mlp->num_hidden_layers], mlp->neuron_activations[mlp->num_hidden_layers - 1], mlp->weights[mlp->num_hidden_layers - 1], mlp->biases[mlp->num_hidden_layers - 1], mlp->hidden_layers_size[mlp->num_hidden_layers - 1], mlp->output_size);
+    //same process for output layer
+    matrixMultiplyAndAddBias(mlp->neuron_activations[mlp->num_hidden_layers],
+                             mlp->neuron_activations[mlp->num_hidden_layers - 1],
+                             mlp->weights[mlp->num_hidden_layers - 1],
+                             mlp->biases[mlp->num_hidden_layers - 1],
+                             mlp->hidden_layers_size[mlp->num_hidden_layers - 1], 
+                             mlp->output_size);
     applyActivationFunction(mlp->neuron_activations[mlp->num_hidden_layers], mlp->output_size, act);
 }
 
+/* mlp = Pointer to the MLP structure to be trained.
+   inputs = batch part of the two-dimensional array of inputs, each row represents a sample.
+   targets = batch part of the two-dimensional array of target outputs
+   current_batch_size = the size of this batch
+   act = Activation function used in the neurons during forward propagation.
+   dact = Derivative of the activation function used during backpropagation.
+   learning_rate = The step size at each iteration while moving toward a minimum of the loss function.
+   Adjusts the weights and biases to minimize the error between the actual output and the predicted output by the network. 
+   This function calculates gradients for weights and biases using the chain rule
+   and updates them accordingly.*/
 void backpropagation(MLP *mlp, double **inputs, double **targets, int current_batch_size, ActivationFunction act, ActivationFunctionDerivative dact, double learning_rate) {
     // Initialize gradient accumulators for weights and biases to zero
-    double ***grad_weights_accumulator = (double ***)malloc((mlp->num_hidden_layers + 1) * sizeof(double **));
-    double **grad_biases_accumulator = (double **)malloc((mlp->num_hidden_layers + 1) * sizeof(double *));
+    double ***grad_weights_accumulators = (double ***)malloc((mlp->num_hidden_layers + output_layer) * sizeof(double **));//[layer][current_layer_neuron][previous_layer_neuron]
+    double **grad_biases_accumulator = (double **)malloc((mlp->num_hidden_layers + output_layer) * sizeof(double *));//[layer][neuron]
     
-    for (int layer = 0; layer <= mlp->num_hidden_layers; layer++) {
-        //size input and output layer
-        int size_in = (layer == 0) ? mlp->input_size : mlp->hidden_layers_size[layer - 1];
-        int size_out = (layer == mlp->num_hidden_layers) ? mlp->output_size : mlp->hidden_layers_size[layer];
-
-        grad_weights_accumulator[layer] = (double **)malloc(size_out * sizeof(double *));
-        grad_biases_accumulator[layer] = (double *)calloc(size_out, sizeof(double));
-        for (int neuron = 0; neuron < size_out; neuron++) {
-            grad_weights_accumulator[layer][neuron] = (double *)calloc(size_in, sizeof(double));
+    for (int current_layer = 0; current_layer <= mlp->num_hidden_layers; current_layer++) {// loop trough each layer
+        int size_in = (current_layer == 0) ? mlp->input_size : mlp->hidden_layers_size[previous_layer];// size of the input at current layer
+        int size_out = (current_layer == mlp->num_hidden_layers) ? mlp->output_size : mlp->hidden_layers_size[current_layer];// size of output at current layer
+        //allocates memory to store the 2D array of weights relative to [current_layer_neuron][previous_layer_neuron]
+        grad_weights_accumulators[current_layer] = (double **)malloc(size_out * sizeof(double *));
+        //allocates memory to store the array of biases relative to the neurons of the current layer
+        grad_biases_accumulator[current_layer] = (double *)calloc(size_out, sizeof(double));
+        for (int neuron = 0; neuron < size_out; neuron++) {// loop trough each neuron
+            grad_weights_accumulators[current_layer][neuron] = (double *)calloc(size_in, sizeof(double));//allocate and initialize the list of weight accumulators to 0
         }
     }
 
-    // Allocate memory for delta values
-    double **delta = (double **)malloc((mlp->num_hidden_layers + 1) * sizeof(double *));
-    for (int layer = 0; layer <= mlp->num_hidden_layers; layer++) {
+    // [layer][neuron] Allocate memory for delta values, the error derivative with respect to the activation of each neuron.
+    double **delta = (double **)malloc((mlp->num_hidden_layers + output_layer) * sizeof(double *));
+    for (int layer = 0; layer <= mlp->num_hidden_layers; layer++) {// loop trough each layer
         int layer_size = (layer == mlp->num_hidden_layers) ? mlp->output_size : mlp->hidden_layers_size[layer];
-        delta[layer] = (double *)malloc(layer_size * sizeof(double));
+        delta[layer] = (double *)malloc(layer_size * sizeof(double)); // Allocate memory for each neuron delta
     }
 
     // Process each sample in the batch
-    for (int sample = 0; sample < current_batch_size; sample++) {
-        // Forward pass
+    for (int sample = 0; sample < current_batch_size; sample++) {// for each each sample in the batch
         feedforward(mlp, inputs[sample], act);
-
-        // Calculate output layer delta
-        for (int i = 0; i < mlp->output_size; i++) {
+        for (int i = 0; i < mlp->output_size; i++) {// for each output node
+            // error = result - expected
             double output_error = targets[sample][i] - mlp->neuron_activations[mlp->num_hidden_layers][i];
-            delta[mlp->num_hidden_layers][i] = output_error * dact(mlp->neuron_activations[mlp->num_hidden_layers][i]);
+            // delta = error * derivativeofactivationfunction(value_of_output_node_i) 
+            delta[mlp->num_hidden_layers][i] = output_error * dact(mlp->neuron_activations[mlp->num_hidden_layers][i]); 
+            //This step quantifies how each output neuron's activation needs to change to reduce the overall error.
         }
 
         // Backpropagate the error
-        for (int layer = mlp->num_hidden_layers - 1; layer >= 0; layer--) {
-            int size_out = (layer == mlp->num_hidden_layers) ? mlp->output_size : mlp->hidden_layers_size[layer];
-            int size_in = (layer == 0) ? mlp->input_size : mlp->hidden_layers_size[layer - 1];
+        //calculate delta for every hidden layer, starting from last one
+        for (int current_layer = mlp->num_hidden_layers - 1; current_layer >= 0; current_layer--) {
+            int size_out = (current_layer == mlp->num_hidden_layers) ? mlp->output_size : mlp->hidden_layers_size[current_layer];// size of the output at current layer
+            int size_in = (current_layer == 0) ? mlp->input_size : mlp->hidden_layers_size[previous_layer];// size of the input at current layer
             
-            for (int j = 0; j < size_out; j++) {
+            for (int j = 0; j < size_out; j++) { //for each neuron in current layer
                 double error = 0.0;
-                for (int k = 0; k < ((layer == mlp->num_hidden_layers - 1) ? mlp->output_size : mlp->hidden_layers_size[layer + 1]); k++) {
-                    error += mlp->weights[layer + 1][k * size_out + j] * delta[layer + 1][k];
+                for (int k = 0; k < ((current_layer == mlp->num_hidden_layers - 1) ? 
+                                                            mlp->output_size : 
+                                                            mlp->hidden_layers_size[next_layer]); k++) {
+                    /* sum up the products of the weights connecting the neuron to the neurons in the next layer
+                    with the delta values of those next layer neurons*/
+                    error += mlp->weights[next_layer][k * size_out + j] * delta[next_layer][k];
                 }
-                delta[layer][j] = error * dact(mlp->neuron_activations[layer][j]);
+                //compute delta for the neuron in current layer
+                delta[current_layer][j] = error * dact(mlp->neuron_activations[current_layer][j]);
             }
 
-            // Accumulate gradients for weights and biases
-            for (int neuron = 0; neuron < size_out; neuron++) {
-                for (int input_neuron = 0; input_neuron < size_in; input_neuron++) {
-                    double grad = delta[layer][neuron] * (layer == 0 ? inputs[sample][input_neuron] : mlp->neuron_activations[layer - 1][input_neuron]);
-                    grad_weights_accumulator[layer][neuron][input_neuron] += grad;
+            // Accumulate gradients for weights and biases per batch
+            for (int neuron = 0; neuron < size_out; neuron++) {//for each neuron in current layer
+                for (int input_neuron = 0; input_neuron < size_in; input_neuron++) {// for each neuron in previous layer
+                    //grad9ient = delta[current_layer][neuron] * previous layer neuron value
+                    double grad = delta[current_layer][neuron] * (current_layer == 0 ? inputs[sample][input_neuron] : mlp->neuron_activations[previous_layer][input_neuron]);
+                    grad_weights_accumulators[current_layer][neuron][input_neuron] += grad;
                 }
-                grad_biases_accumulator[layer][neuron] += delta[layer][neuron];
+                grad_biases_accumulator[current_layer][neuron] += delta[current_layer][neuron];//accumulate deltas 
             }
         }
     }
-
+    // batch computed
     // Apply mean gradients to update weights and biases
-    for (int layer = 0; layer <= mlp->num_hidden_layers; layer++) {
-        int size_in = (layer == 0) ? mlp->input_size : mlp->hidden_layers_size[layer - 1];
-        int size_out = (layer == mlp->num_hidden_layers) ? mlp->output_size : mlp->hidden_layers_size[layer];
+    for (int current_layer = 0; current_layer <= mlp->num_hidden_layers; current_layer++) {
+        int size_in = (current_layer == 0) ? mlp->input_size : mlp->hidden_layers_size[previous_layer];
+        int size_out = (current_layer == mlp->num_hidden_layers) ? mlp->output_size : mlp->hidden_layers_size[current_layer];
         
-        for (int neuron = 0; neuron < size_out; neuron++) {
+        for (int neuron = 0; neuron < size_out; neuron++) {//for each neuron in current layer
             for (int input_neuron = 0; input_neuron < size_in; input_neuron++) {
                 // Calculate mean gradient
-                double mean_grad = grad_weights_accumulator[layer][neuron][input_neuron] / current_batch_size;
+                double mean_grad = grad_weights_accumulators[current_layer][neuron][input_neuron] / current_batch_size;
                 // Update weights
-                mlp->weights[layer][neuron * size_in + input_neuron] += learning_rate * mean_grad;
+                mlp->weights[current_layer][neuron * size_in + input_neuron] += learning_rate * mean_grad;
             }
             // Calculate mean gradient for biases and update
-            double mean_grad_bias = grad_biases_accumulator[layer][neuron] / current_batch_size;
-            mlp->biases[layer][neuron] += learning_rate * mean_grad_bias;
+            double mean_grad_bias = grad_biases_accumulator[current_layer][neuron] / current_batch_size;
+            mlp->biases[current_layer][neuron] += learning_rate * mean_grad_bias;
         }
     }
 
     // Free memory allocated for gradient accumulators and delta
     for (int layer = 0; layer <= mlp->num_hidden_layers; layer++) {
         for (int neuron = 0; neuron < (layer == mlp->num_hidden_layers ? mlp->output_size : mlp->hidden_layers_size[layer]); neuron++) {
-            free(grad_weights_accumulator[layer][neuron]);
+            free(grad_weights_accumulators[layer][neuron]);
         }
-        free(grad_weights_accumulator[layer]);
+        free(grad_weights_accumulators[layer]);
         free(grad_biases_accumulator[layer]);
         free(delta[layer]);
     }
-    free(grad_weights_accumulator);
+    free(grad_weights_accumulators);
     free(grad_biases_accumulator);
     free(delta);
 }
 
+/*  mlp = Pointer to the MLP structure to be trained.
+    dataset = Two-dimensional array of input data, where each row represents a sample.
+    targets = Two-dimensional array of target outputs corresponding to each input sample.
+    num_samples = The total number of samples in the dataset.
+    num_epochs = The number of times the entire dataset is passed through the network for training.
+    learning_rate = The step size at each iteration while moving toward a minimum of the loss function.
+    batch_size= The number of samples processed before the model is updated.
+    act = Activation function used in the neurons during forward propagation.
+    dact = Derivative of the activation function used during backpropagation.
+   Repeatedly applies feedforward and backpropagation on the dataset for a specified number of epochs,
+   adjusting the weights to minimize the loss.*/
 void trainMLP(MLP *mlp, double **dataset, double **targets, int num_samples, int num_epochs, double learning_rate, int batch_size, ActivationFunction act, ActivationFunctionDerivative dact) {
     for (int epoch = 0; epoch < num_epochs; epoch++) {
-        double total_loss = 0.0;
-
-        for (int i = 0; i < num_samples; i += batch_size) {
-            int current_batch_size = (i + batch_size > num_samples) ? (num_samples - i) : batch_size;
-
-            double **batch_inputs = (double **)malloc(current_batch_size * sizeof(double *));
-            double **batch_targets = (double **)malloc(current_batch_size * sizeof(double *));
+        //An epoch is a single pass through the entire dataset.
+        double total_loss = 0.0; //accomulator of loss over a single epoch
+        for (int i = 0; i < num_samples; i += batch_size) { // iterate through the dataset in batches.
+            int current_batch_size = (i + batch_size > num_samples) ? (num_samples - i) : batch_size;// if it's the last batch, probababy it's smaller than others
+            double **batch_inputs = (double **)malloc(current_batch_size * sizeof(double *));// the inputs for this batch
+            double **batch_targets = (double **)malloc(current_batch_size * sizeof(double *));// the labels for this batch
             for (int j = 0; j < current_batch_size; j++) {
                 batch_inputs[j] = dataset[i + j];
                 batch_targets[j] = targets[i + j];
             }
-
             backpropagation(mlp, batch_inputs, batch_targets, current_batch_size, act, dact, learning_rate);
-
             free(batch_inputs);
             free(batch_targets);
-
-            double loss = 0.0;
-            for (int j = i; j < i + current_batch_size; j++) {
-                for (int k = 0; k < mlp->output_size; k++) {
-                    double error = targets[j][k] - mlp->neuron_activations[mlp->num_hidden_layers][k];
+            //compute loss for the curent batch
+            double loss = 0.0; 
+            for (int j = i; j < i + current_batch_size; j++) {//iterate over all samples in the batch
+                for (int k = 0; k < mlp->output_size; k++) {//iterate over all output neurons
+                    double error = targets[j][k] - mlp->neuron_activations[mlp->num_hidden_layers][k];//the loss for an output neuron
                     loss += error * error;
                 }
             }
-            total_loss += loss / (mlp->output_size * current_batch_size);
+            //we added the loss of each neuron in the output layer, for n times, where n is the current_batch_size
+            total_loss += loss / (mlp->output_size * current_batch_size); //add to the total loss the average loss of this batch
         }
-
-        total_loss /= num_samples;
+        //by printing the average loss of this epoch we have an idea of how good the learning is going odd
+        total_loss /= num_samples; 
         printf("Epoch %d, Loss: %f\n", epoch + 1, total_loss);
     }
 }
@@ -277,13 +332,23 @@ double dtanh(double x) {
     return 1 - tanh_x * tanh_x;
 }
 
-void matrixMultiplyAndAddBias(double *output, double *input, double *weights, double *biases, int inputSize, int outputSize) {
-    for (int i = 0; i < outputSize; i++) {
-        output[i] = 0.0;
-        for (int j = 0; j < inputSize; j++) {
-            output[i] += input[j] * weights[i * inputSize + j];
+/* output = array of wheighted sums (neurons of current layer = neuron_activations of next layer)
+   input =  array of wheighted sums (neuron_activations of current layer = neurons of previous layer)
+   weights = weights of current layer
+   biases = biases of current layer
+   input_size = number of neurons of previous layer
+   outputsize = number of neurons of current layer
+*/
+void matrixMultiplyAndAddBias(double *output, double *input, 
+                              double *weights, double *biases, 
+                              int inputSize, int outputSize) {
+    for (int neuron_i = 0; neuron_i < outputSize; neuron_i++) {// neuron in current layer
+        output[neuron_i] = 0.0;// initialize
+        for (int neuron_j = 0; neuron_j < inputSize; neuron_j++) {// neuron of previous layer
+            //multiply each input neuron by corresponding weight
+            output[neuron_i] += input[neuron_j] * weights[neuron_i * inputSize + neuron_j]; 
         }
-        output[i] += biases[i];
+        output[neuron_i] += biases[neuron_i];//add bias
     }
 }
 
