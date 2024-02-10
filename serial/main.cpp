@@ -434,16 +434,17 @@ void splitDataset(int train_size, int test_size, int validation_size,
 
 int main(int argc, char *argv[]){
 
-    const char* filename = "/home/pavka/multiprocessing-NN/serial/datasets/california.csv";
+    const char* filename = "/home/lexyo/Documenti/Dev/Multicore/multiprocessing-NN/serial/datasets/california.csv";
     double **dataset = NULL, **targets = NULL;
     int n_samples = 0;
 
     // Load and prepare the dataset
     loadAndPrepareDataset(filename, &dataset, &targets, &n_samples);
     double **train_data = NULL, **train_targets = NULL, **test_data = NULL,
-           **test_targets = NULL, **validation_data = NULL, **validation_targets = NULL;
+            **test_targets = NULL, **validation_data = NULL, **validation_targets = NULL;
     int train_size = (int)(n_samples*60/100), test_size = (int)(n_samples*40/100), validation_size = 0;
-    splitDataset(train_size, test_size, validation_size, &train_data, &train_targets, &test_data, &test_targets, &validation_data, &validation_targets, &dataset, &targets, n_samples);
+    printf("%d, %d\n", train_size, test_size);
+     splitDataset(train_size, test_size, validation_size, &train_data, &train_targets, &test_data, &test_targets, &validation_data, &validation_targets, &dataset, &targets, n_samples);
     
     // Initialize your MLP
     int input_size = N_FEATURES; // Define according to your dataset
@@ -461,7 +462,7 @@ int main(int argc, char *argv[]){
     
 
     // Train MLP
-    trainMLP(mlp, train_data, train_targets, n_samples, num_epochs, learning_rate, batch_size, sigmoid, dsigmoid);
+    //trainMLP(mlp, train_data, train_targets, n_samples, num_epochs, learning_rate, batch_size, sigmoid, dsigmoid);
 
     // Clean up
     for (int i = 0; i < n_samples; i++) {
