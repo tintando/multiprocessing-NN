@@ -37,70 +37,6 @@ void checkCudaError(cudaError_t error){
 }
 
 
-__global__ void gpu_print_features(float* features){
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if(idx == 4){
-        printf("Sample %d: ", idx);
-        for(int i = 0; i < 8; i++){
-            printf("%f ", features[idx * 8 + i]);
-        }
-        printf("\n");
-    }
-}
-
-__global__ void setup_kernel(curandState* state, unsigned long seed){
-    int idx = threadIdx.x + blockIdx.x * blockDim.x;
-    curand_init(seed, idx, 0, &state[idx]);
-}
-
-
-__global__ void d_initializeWeights(int layer, float** weights, int n_values, float range, curandState *state){
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if(idx < n_values){
-        curandState localState = state[idx];
-        float random = curand_uniform(&localState);
-        // printf("L%d, Thread %d/%d: %f\n", layer, blockIdx.x, idx, random);
-        // weights[layer][idx] = (random * 2 - 1) * range;
-        weights[layer][idx] = (float) idx;
-    }
-}
-
-__global__ void MatMul(float* A, float* B, float* C, int ARows, int ACols, int BRows,
-    int BCols, int CRows, int CCols)
-{
-    float CValue = 0;
-
-    int Row = blockIdx.y*TILE_SIZE + threadIdx.y;
-    int Col = blockIdx.x*TILE_SIZE + threadIdx.x;
-
-    __shared__ float As[TILE_SIZE][TILE_SIZE];
-    __shared__ float Bs[TILE_SIZE][TILE_SIZE];
-
-    for (int k = 0; k < (TILE_SIZE + ACols - 1)/TILE_SIZE; k++) {
-
-         if (k*TILE_SIZE + threadIdx.x < ACols && Row < ARows)
-             As[threadIdx.y][threadIdx.x] = A[Row*ACols + k*TILE_SIZE + threadIdx.x];
-         else
-             As[threadIdx.y][threadIdx.x] = 0.0;
-
-         if (k*TILE_SIZE + threadIdx.y < BRows && Col < BCols)
-             Bs[threadIdx.y][threadIdx.x] = B[(k*TILE_SIZE + threadIdx.y)*BCols + Col];
-         else
-             Bs[threadIdx.y][threadIdx.x] = 0.0;
-
-         __syncthreads();
-
-         for (int n = 0; n < TILE_SIZE; ++n)
-             CValue += As[threadIdx.y][n] * Bs[n][threadIdx.x];
-
-         __syncthreads();
-    }
-
-    if (Row < CRows && Col < CCols)
-        C[((blockIdx.y * blockDim.y + threadIdx.y)*CCols) +
-           (blockIdx.x * blockDim.x)+ threadIdx.x] = CValue;
-}
-
 float** d_allocateWeightShaped(int* layers, int n_layers){
     float** d_weights;
     checkCudaError(cudaMalloc((void**)&d_weights, (n_layers + 1) * sizeof(float*)));
@@ -140,12 +76,106 @@ float** d_allocateActivationShaped(int* layers, int n_layers, int batch_size){
         int n_cols = layers[i];
         // printf("Activations %d: %d x %d\n", i, batch_size, n_cols);
         checkCudaError(cudaMalloc(&activations[i], batch_size * n_cols * sizeof(float)));
+        cudaMemset(activations[i], 0, batch_size * n_cols * sizeof(float));
     }
     cudaMemcpy(d_activations, activations, n_layers * sizeof(float*), cudaMemcpyHostToDevice);
     return d_activations;
 }
 
-__global__ void forward_pass(MLP mlp, int batch_size, int start){
+
+__global__ void gpu_print_features(float* features){
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if(idx == 4){
+        printf("Sample %d: ", idx);
+        for(int i = 0; i < 8; i++){
+            printf("%f ", features[idx * 8 + i]);
+        }
+        printf("\n");
+    }
+}
+
+__global__ void setup_kernel(curandState* state, unsigned long seed){
+    int idx = threadIdx.x + blockIdx.x * blockDim.x;
+    curand_init(seed, idx, 0, &state[idx]);
+}
+
+
+__global__ void d_initializeWeights(int layer, float** weights, int n_values, float range, curandState *state){
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if(idx < n_values){
+        curandState localState = state[idx];
+        float random = curand_uniform(&localState);
+        // printf("L%d, Thread %d/%d: %f\n", layer, blockIdx.x, idx, random);
+        weights[layer][idx] = (random * 2 - 1) * range;
+        // weights[layer][idx] = (float) idx;
+    }
+}
+
+__global__ void MatMul(float* A, float* B, float* C, int ARows, int ACols, int BRows,
+    int BCols, int CRows, int CCols)
+{
+    float CValue = 0;
+
+    int Row = blockIdx.y*TILE_SIZE + threadIdx.y;
+    int Col = blockIdx.x*TILE_SIZE + threadIdx.x;
+
+    __shared__ float As[TILE_SIZE][TILE_SIZE];
+    __shared__ float Bs[TILE_SIZE][TILE_SIZE];
+
+    for (int k = 0; k < (TILE_SIZE + ACols - 1)/TILE_SIZE; k++) {
+
+         if (k*TILE_SIZE + threadIdx.x < ACols && Row < ARows)
+             As[threadIdx.y][threadIdx.x] = A[Row*ACols + k*TILE_SIZE + threadIdx.x];
+         else
+             As[threadIdx.y][threadIdx.x] = 0.0;
+
+         if (k*TILE_SIZE + threadIdx.y < BRows && Col < BCols)
+             Bs[threadIdx.y][threadIdx.x] = B[(k*TILE_SIZE + threadIdx.y)*BCols + Col];
+         else
+             Bs[threadIdx.y][threadIdx.x] = 0.0;
+
+         __syncthreads();
+
+         for (int n = 0; n < TILE_SIZE; ++n)
+             CValue += As[threadIdx.y][n] * Bs[n][threadIdx.x];
+
+         __syncthreads();
+    }
+
+    if (Row < CRows && Col < CCols)
+        C[((blockIdx.y * blockDim.y + threadIdx.y)*CCols) +
+           (blockIdx.x * blockDim.x)+ threadIdx.x] = CValue;
+}
+
+__global__ void logits_add_biases_activation_sigmoid(MLP mlp, int i, int n_cols){
+    float* logits = mlp.logits[i];
+    float* biases = mlp.biases[i];
+    float* activations = mlp.activations[i];
+    int n_rows = mlp.batch_size;
+
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int n_values = n_rows * n_cols;
+    // int col = idx % n_cols;
+    // int row = idx / n_cols;
+    if(idx < n_values){
+        // printf("adding bias[%d] to logit[%d][%d]\n", col, row, col);
+        // double check if modulo or div
+        logits[idx] += biases[idx%n_cols]; //adds bias of the row
+        // 1 2 3 4
+        // 1 2 3 5
+        // 1 2 3 6
+        // 1 2 3 7
+
+        if (i != mlp.n_layers - 1) {
+            //Sigmoid
+            activations[idx] = 1 / (1 + exp(-logits[idx]));
+        } else {
+            activations[idx] = (logits[idx] > 0) ? (logits[idx]) : (0);
+        }
+    }
+}
+
+__global__ void forward_pass(const MLP mlp, int batch_size, int start){
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     int n_layers = mlp.n_layers;
     int* layers = mlp.layers;
@@ -155,53 +185,216 @@ __global__ void forward_pass(MLP mlp, int batch_size, int start){
     float** logits = mlp.logits;
     float* inputs = mlp.inputs;
     float* labels = mlp.labels;
-    
+    // printf(" ", idx);
     // Forward pass
-    // for(int i = 0; i < n_layers; i++){
-    for(int i = 0; i < 1; i++){
+
+    for(int i = 0; i < n_layers; i++){
+    // for(int i = 0; i < 1; i++){
         int n_rows = i == 0 ? N_FEATURES : layers[i - 1];
         int n_cols = i == n_layers ? N_LABELS : layers[i];
-        int n_values = n_rows * n_cols;
         
         dim3 blockSize(TILE_SIZE, TILE_SIZE);
         dim3 gridSize((n_cols + blockSize.x - 1) / blockSize.x, (batch_size + blockSize.y - 1) / blockSize.y);
         // Compute logits
-        MatMul<<<gridSize, blockSize>>>(inputs+start*N_FEATURES*sizeof(float), weights[i], logits[i], batch_size, n_rows, n_rows, n_cols, batch_size, n_cols);
+        // printf("Computing logits for layer %d\n", i);
+
+                // Print weights[i]
+        printf("LAYER %d\n", i);
+        printf("weights[%d]: %dx%d\n", i, n_rows, n_cols);
+        for(int j = 0; j < n_rows; j++){
+            for(int k = 0; k < n_cols; k++){
+                printf("%f ", weights[i][j * n_cols + k]);
+            }
+            printf("\n");
+        }
+        printf("\n");
+
+        // Print inputs
+        printf("inputs: %dx%d\n", batch_size, n_rows);
+        for(int j = 0; j < batch_size; j++){
+            for(int k = 0; k < n_rows; k++){
+                if (i == 0) {
+                    printf("%f ", inputs[(start + j) * N_FEATURES + k]);
+                } else {
+                    printf("%f ", activations[i-1][j * n_rows + k]);
+                }
+                // printf("%f ", inputs[(start + j) * N_FEATURES + k]);
+            }
+            printf("\n");
+        }
+        printf("\n");
+
+        if (i == 0) { // first layer
+            MatMul<<<gridSize, blockSize>>>(inputs+start*N_FEATURES*sizeof(float), weights[i], logits[i], batch_size, n_rows, n_rows, n_cols, batch_size, n_cols);
+        }
+        else {
+            MatMul<<<gridSize, blockSize>>>(activations[i-1], weights[i], logits[i], batch_size, n_rows, n_rows, n_cols, batch_size, n_cols);
+        }
         cudaDeviceSynchronize();
-        printf("logits[%d]: ", i);
-        for(int j = 0; j < n_values; j++){
-            printf("%f ", logits[i][j]);
+        printf("logits[%d]:\n ", i);
+        for(int j = 0; j < batch_size; j++){
+            for(int k = 0; k < n_cols; k++){
+                printf("%f ", logits[i][j * n_cols + k]);
+            }
+            printf("\n ");
         }
         printf("\n");
         
-        // // Add biases
-        // for(int j = 0; j < n_values; j++){
-        //     logits[i][j] += biases[i][j];
-        // }
-
-        // // Apply activation function
-        // for(int j = 0; j < n_values; j++){
-        //     activations[i][j] = 1 / (1 + exp(-logits[i][j]));
-        // }
+        // Add biases to logits and compute activations
+        int n_values = batch_size * n_cols;
+        int threads_per_block = 256;
+        int blocks_per_grid = (n_values + threads_per_block - 1) / threads_per_block;
+        logits_add_biases_activation_sigmoid<<<blocks_per_grid, threads_per_block>>>(mlp, i, n_cols);
+        cudaDeviceSynchronize();
+        
     }
 
 }
+__global__ void compute_deltas(MLP mlp){
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int n_layers = mlp.n_layers;
+    int batch_size = mlp.batch_size;
+    int* layers = mlp.layers;
+    float** weights = mlp.weights;
+    float** activations = mlp.activations;
+    float** logits = mlp.logits;
+    float** deltas = mlp.deltas;
+    float* inputs = mlp.inputs;
+    float* labels = mlp.labels;
 
-void train(MLP mlp, int epochs, int batch_size, int n_samples){
+    // Compute deltas for the output layer
+    int n_rows = batch_size;
+    int n_cols = layers[n_layers - 1];
+    int n_values = n_rows * n_cols;
+
+    if (idx < n_values){
+        int col = idx % n_cols;
+        int row = idx / n_cols;
+        
+        // (predicted-target) [hadamard] step(logits)
+        deltas[n_layers - 1][idx] = activations[n_layers-1][row * n_cols + col] * (activations[n_layers - 1][idx] >= 0) ? (1) : (0); 
+        printf("deltas[%d]: %f\n", idx, deltas[n_layers - 1][idx]);
+        __syncthreads();
+
+        // Compute deltas for the hidden layers
+        for(int i = n_layers - 2; i > 0; i--){
+            // int n_rows = layers[i - 1];
+            int n_cols = layers[i];
+            int n_values = n_rows * n_cols;
+            float sum = 0;
+            if (idx < n_values){
+                for(int k = 0; k < layers[i + 1]; k++){
+                    sum += weights[i + 1][idx * layers[i + 1] + k] * deltas[i + 1][k];
+                }
+                if (idx == 0) {
+                    deltas[i][idx] = (float)42069;
+                } else {
+                    deltas[i][idx] = (1 - activations[i][idx]) * activations[i][idx] * sum;
+                }
+                //d^(l+1)*W^l+1^T [hadamard] afunc'(logit^l)
+                // deltas[i][idx] = (1 - activations[i][idx]) * activations[i][idx] * sum;
+            }
+            // for(int j = 0; j < n_values; j++){
+            //     float sum = 0;
+            //     for(int k = 0; k < layers[i + 1]; k++){
+            //         sum += weights[i + 1][j * layers[i + 1] + k] * deltas[i + 1][k];
+            //     }
+            //     deltas[i][j] = (1 - activations[i][j]) * activations[i][j] * sum;
+            // }
+        }
+    }
+}
+__global__ void backpropagation(MLP mlp){
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int n_layers = mlp.n_layers;
+    int* layers = mlp.layers;
+    float** weights = mlp.weights;
+    float** biases = mlp.biases;
+    float** activations = mlp.activations;
+    float** logits = mlp.logits;
+    float** gradients = mlp.gradients;
+    float** deltas = mlp.deltas;
+    float* inputs = mlp.inputs;
+    float* labels = mlp.labels;
+
+    // Deltas
+    int n_values = mlp.layers[mlp.n_layers - 2] * mlp.layers[mlp.n_layers - 1];
+    int threads_per_block = 256;
+    int blocks_per_grid = (n_values + threads_per_block - 1) / threads_per_block;
+    compute_deltas<<<blocks_per_grid, threads_per_block>>>(mlp);
+    // Bias gradients
+
+    // Weight gradients
+    // // Backward pass
+    // for(int i = n_layers - 1; i >= 0; i--){
+    //     int n_rows = i == 0 ? N_FEATURES : layers[i - 1];
+    //     int n_cols = i == n_layers ? N_LABELS : layers[i];
+    //     int n_values = n_rows * n_cols;
+    //     int threads_per_block = 256;
+    //     int blocks_per_grid = (n_values + threads_per_block - 1) / threads_per_block;
+    //     if(i == n_layers - 1){
+    //         // Compute deltas for the output layer
+    //         // printf("Computing deltas for output layer\n");
+    //         for(int j = 0; j < n_values; j++){
+    //             deltas[i][j] = (activations[i][j] - labels[j]) * (1 - activations[i][j]) * activations[i][j];
+    //         }
+    //         // printf("deltas[%d]:\n ", i);
+    //         // for(int j = 0; j < n_rows; j++){
+    //         //     for(int k = 0; k < n_cols; k++){
+    //         //         printf("%f ", deltas[i][j * n_cols + k]);
+    //         //     }
+    //         //     printf("\n ");
+    //         // }
+    //         // printf("\n");
+    //     }
+    //     else{
+    //         // Compute deltas for the hidden layers
+    //         // printf("Computing deltas for hidden layer %d\n", i);
+    //         int n_cols_next = layers[i + 1];
+    //         int n_values_next = n_cols_next * n_cols;
+    //         int threads_per_block = 256;
+    //         int blocks_per_grid = (n_values + threads_per_block - 1) / threads_per_block;
+    //         for(int j = 0; j < n_values; j++){
+    //             float sum = 0;
+    //             for(int k = 0; k < n_values_next; k++){
+    //                 sum += weights[i + 1][k] * deltas[i + 1][k];
+    //             }
+    //             deltas[i][j] = (1 - activations[i][j]) * activations[i][j] * sum;
+        
+
+        
+}
+
+void train(const MLP mlp, int epochs, int batch_size, int n_samples){
     printf("Training...\n");
-    // for(int i = 0; i < epochs; i++){
-    for(int i = 0; i < 1; i++){
+
+    int n_layers = mlp.n_layers;
+    int* h_layers = (int*)malloc(n_layers * sizeof(int));
+
+    cudaMemcpy(h_layers, mlp.layers, n_layers * sizeof(int), cudaMemcpyDeviceToHost);
+    
+    for (int i = 0; i < n_layers; i++) {
+        printf("Layer %d: %d\n", i, h_layers[i]);
+    }
+
+    
+    for(int i = 0; i < epochs; i++){     // for(int i = 0; i < 1; i++){
+
         printf("Epoch %d\n", i);
-        for (int start = 0; start < n_samples - batch_size; start += batch_size) {
-            // printf("Batch %d\n", start);
+        // for (int start = 0; start < n_samples - batch_size; start += batch_size) {         // for (int start = 0; start < 1; start += batch_size) {
+        for (int start = 0; start < 1; start += batch_size) {
         // Forward pass 
             forward_pass<<<1,1>>>(mlp, batch_size, start);
+            cudaDeviceSynchronize();
+
+        // Backward pass
+            backpropagation<<<1,1>>>(mlp);
             cudaDeviceSynchronize();
         }
     }
 }
 
-void printWeights(MLP mlp) {
+void printWeights(const MLP mlp) {
     int n_layers = mlp.n_layers;
     float** h_weights = (float**)malloc(n_layers * sizeof(float*));
     int* h_layers = (int*)malloc(n_layers * sizeof(int));
@@ -237,33 +430,78 @@ void printWeights(MLP mlp) {
     free(h_layers);
 }
 
-void printActivationShaped(MLP mlp) {
-    
-    float** h_activations = (float**)malloc(mlp.n_layers * sizeof(float*));
-    int* h_layers = (int*)malloc(mlp.n_layers * sizeof(int));
+__global__ void print_layers(const MLP mlp){
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if(idx == 0){
+        printf("Number of layers: %d\n", mlp.n_layers);
+        for(int i = 0; i < mlp.n_layers; i++){
+            printf("Layer %d: %d\n", i, mlp.layers[i]);
+        }
+    }
+}
 
-    cudaMemcpy(h_activations, mlp.activations, mlp.n_layers * sizeof(float*), cudaMemcpyDeviceToHost);
-    cudaMemcpy(h_layers, mlp.layers, mlp.n_layers * sizeof(int), cudaMemcpyDeviceToHost);
-
-
-        //     int n_cols = layers[i];
-        // // printf("Activations %d: %d x %d\n", i, batch_size, n_cols);
-        // checkCudaError(cudaMalloc(&activations[i], batch_size * n_cols * sizeof(float)));
-    
+__global__ void d_printActivationShaped(MLP mlp){
     for (int i = 0; i < mlp.n_layers; i++) {
         int n_rows = mlp.batch_size;
-        int n_cols = h_layers[i];
+        int n_cols = mlp.layers[i];
+        int n_values = n_rows * n_cols;
+
+        printf("Activations for Layer %d: %dx%d\n", i, n_rows, n_cols);
+        for (int j = 0; j < n_rows; j++) {
+            for (int k = 0; k < n_cols; k++) {
+                printf("%.2f ", mlp.activations[i][j * n_cols + k]);
+            }
+            printf("\n");
+        }
+        printf("\n");
+    }
+}
+
+
+void printActivationShaped(const MLP mlp, int* layers, int choice) {
+    float** h_activations = (float**)malloc(mlp.n_layers * sizeof(float*)); // activation shaped, may contain logits, activations, gradients, deltas
+    // int* h_layers = (int*)malloc(mlp.n_layers * sizeof(int));
+    // int* h_layers = layers;
+    char* parameter;
+    switch (choice) {
+        case 1: // Copy mlp.logits
+            cudaMemcpy(h_activations, mlp.logits, mlp.n_layers * sizeof(float*), cudaMemcpyDeviceToHost);
+            parameter = "Logits";
+            break;
+        case 2: // Copy mlp.activations
+            cudaMemcpy(h_activations, mlp.activations, mlp.n_layers * sizeof(float*), cudaMemcpyDeviceToHost);
+            parameter = "Activations";
+            break;
+        case 3: // Copy mlp.deltas
+            cudaMemcpy(h_activations, mlp.deltas, mlp.n_layers * sizeof(float*), cudaMemcpyDeviceToHost);
+            parameter = "Deltas";
+            break;
+        case 4: // Copy mlp.gradients
+            cudaMemcpy(h_activations, mlp.gradients, mlp.n_layers * sizeof(float*), cudaMemcpyDeviceToHost);
+            parameter = "Gradients";
+            break;
+        default:
+            printf("Invalid choice.\n");
+            break;
+    }
+
+    // cudaMemcpy(h_activations, mlp.activations, mlp.n_layers * sizeof(float*), cudaMemcpyDeviceToHost);
+
+    // h_layers = layers;
+    for (int i = 0; i < mlp.n_layers; i++) {
+        int n_rows = mlp.batch_size;
+        int n_cols = layers[i];
         int n_values = n_rows * n_cols;
 
         float* h_activations_i = (float*)malloc(n_rows * n_cols * sizeof(float));
         if (h_activations_i == NULL) {
-            printf("Memory allocation failed.\n");
-            return;
+            printf("h_activations_i Memory allocation failed.\n");
+            exit(1);
         }
 
         cudaMemcpy(h_activations_i, h_activations[i], n_rows * n_cols * sizeof(float), cudaMemcpyDeviceToHost);
 
-        printf("Activations for Layer %d: %dx%d\n", i, n_rows, n_cols);
+        printf("%s for Layer %d: %dx%d\n", parameter, i, n_rows, n_cols);
         for (int j = 0; j < n_rows; j++) {
             for (int k = 0; k < n_cols; k++) {
                 printf("%.2f ", h_activations_i[j * n_cols + k]);
@@ -275,13 +513,10 @@ void printActivationShaped(MLP mlp) {
         free(h_activations_i);
     }
     free(h_activations);
-    free(h_layers);
+    // free(h_layers);
 }
 
 
-__global__ void test_activation(MLP mlp){
-
-}
 
 int main(int argc, char* argv[]) {
     //usage ./main hidden_size1 hidden_size2 ... hidden_sizeN epochs batch_size
@@ -295,8 +530,10 @@ int main(int argc, char* argv[]) {
     }
 
     // Allocate memory for the integer array that will store the hidden layer sizes
-    int n_hidden_layers = argc - 3;
-    int* layers = (int*)malloc((n_hidden_layers+1) * sizeof(int));
+    
+    int n_hidden_layers = argc - 3;// the number of hidden layers
+    //array: entry[i] = size of hidden layer i || size of output layer
+    int* layers = (int*)malloc((n_hidden_layers+1) * sizeof(int)); 
     if(layers == NULL) {
         printf("Memory allocation failed.\n");
         return 1;
@@ -325,8 +562,9 @@ int main(int argc, char* argv[]) {
     char* filename = "/home/tintando/Documents/multiprocessing-NN/cuda/datasets/california.csv";
 
     // Read the dataset
-    int n_samples;
-    Sample* samples = readDataset(filename, &n_samples);
+
+    int n_samples;// the number of samples
+    Sample* samples = readDataset(filename, &n_samples);//array of: (features[8], label)
     printf("Number of samples: %d\n", n_samples);
     printSamples(samples, 5);
 
@@ -341,9 +579,9 @@ int main(int argc, char* argv[]) {
 
 
     MLP mlp;
-
-    printf("HOST: Coalescing features and labels...\n");
     // coalesce features and labels
+    printf("HOST: Coalescing features and labels...\n");
+    //array of features?
     float* h_features = (float*)malloc(n_samples * N_FEATURES * sizeof(float));
     float* h_labels = (float*)malloc(n_samples * N_LABELS * sizeof(float));
     for(int i = 0; i < n_samples; i++) {
@@ -396,7 +634,10 @@ int main(int argc, char* argv[]) {
     mlp.inputs = d_features;
     mlp.labels = d_labels;
 
+    // int* h_layers = (int*)malloc(mlp.n_layers * sizeof(int));
+    // cudaMemcpy(h_layers, mlp.layers, mlp.n_layers * sizeof(int), cudaMemcpyDeviceToHost);
 
+    
     printf("HOST: Initializing curand...\n");
     // Initialize curand
     curandState* d_state;
@@ -438,16 +679,20 @@ int main(int argc, char* argv[]) {
 
     // Print d_weights
     printWeights(mlp);
-    printActivationShaped(mlp);
-    test_activation<<<1, 1>>>(mlp);
-    printActivationShaped(mlp);
+    // printActivationShaped(mlp);
+    // test_activation<<<1, 1>>>(mlp);
+    printActivationShaped(mlp, layers, 1);
 
     train(mlp, epochs, batch_size, n_samples);
 
-    // printActivationShaped(mlp);
+    // d_printActivationShaped<<<1,1>>>(mlp);
+
     // gpu_print_features<<<1, 32>>>(d_features);
 
-    cudaFree(d_features);
+    printActivationShaped(mlp, layers, 1);
+    printActivationShaped(mlp, layers, 2);
+    printActivationShaped(mlp, layers, 3);
+
     // cuda_hello<<<1,1>>>();
     cudaDeviceSynchronize();
     return 0;
