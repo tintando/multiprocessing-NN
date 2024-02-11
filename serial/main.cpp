@@ -172,8 +172,7 @@ void feedforward(MLP *mlp, double *input, ActivationFunction act) {
    Adjusts the weights and biases to minimize the error between the actual output and the predicted output by the network. 
    This function calculates gradients for weights and biases using the chain rule
    and updates them accordingly.*/
-#include <cstdlib> // for malloc and free
-#include <cmath> // for pow
+
 
 double backpropagation(MLP *mlp, double **inputs, double **targets, int current_batch_size, ActivationFunction act, ActivationFunctionDerivative dact, double learning_rate) {
     // Initialize gradient accumulators for weights and biases to zero
