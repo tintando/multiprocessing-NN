@@ -203,39 +203,7 @@ void feedforward(MLP *mlp, double *input, ActivationFunction act) {
     applyActivationFunction(mlp->neuron_activations[mlp->num_hidden_layers], mlp->output_size, act);
 }
 
-/* mlp = Pointer to the MLP structure to be trained.
-   inputs = batch part of the two-dimensional array of inputs, each row represents a sample.
-   targets = batch part of the two-dimensional array of target outputs
-   current_batch_size = the size of this batch
-   act = Activation function used in the neurons during forward propagation.
-   dact = Derivative of the activation function used during backpropagation.
-   learning_rate = The step size at each iteration while moving toward a minimum of the loss function.
-   Adjusts the weights and biases to minimize the error between the actual output and the predicted output by the network. 
-   This function calculates gradients for weights and biases using the chain rule
-   and updates them accordingly.*/
 
-// // int thread_id;
-// // double **my_inputs; [sample][input]
-// // double **my_targets; [sample][target]
-// // double **my_neuron_activations; [layer][neuron]
-// // int current_batch_size;
-// // ActivationFunction act;
-// // ActivationFunctionDerivative dact;
-// // double learning_rate;
-// // double *batch_loss;
-// // MLP *mlp;
-// struct thread_data{
-//     int thread_id;
-//     double **my_inputs;
-//     double **my_targets;
-//     double **my_neuron_activations;
-//     int current_batch_size;
-//     ActivationFunction act;
-//     ActivationFunctionDerivative dact;
-//     double learning_rate;
-//     double *batch_loss;
-//     MLP *mlp;
-// };
 
 void *thread_action(void *args_p){
 
@@ -352,7 +320,7 @@ double backpropagation(MLP *mlp, double **inputs, double **targets, int current_
         struct thread_data *args = (struct thread_data *)malloc(sizeof(struct thread_data)); //parameters of thread
         args->thread_id = thread;
         args->my_start_index = thread*current_batch_size/NUM_THREADS;
-        args->my_end_index = (thread+1)*current_batch_size/NUM_THREADS;
+        args->my_end_index = ((thread+1)*current_batch_size/NUM_THREADS);
         args->inputs = inputs;
         args->targets = targets;
         args->my_neuron_activations = (double **)malloc((mlp->num_hidden_layers + 1) * sizeof(double *));
@@ -386,6 +354,7 @@ double backpropagation(MLP *mlp, double **inputs, double **targets, int current_
             }
         }
         
+        printf("hello im thread %d, my start index is %d, my end index is %d\n", args->thread_id, args->my_start_index, args->my_end_index);
 
         pthread_create(&thread_handles[thread],NULL, thread_action, (void*) args);
         
