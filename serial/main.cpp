@@ -285,7 +285,7 @@ double backpropagation(MLP *mlp, double **inputs, double **targets, int current_
 void trainMLP(MLP *mlp, double **dataset, double **targets, int num_samples, int num_epochs, double learning_rate, int batch_size, ActivationFunction act, ActivationFunctionDerivative dact) {
     for (int epoch = 0; epoch < num_epochs; epoch++) {
         //An epoch is a single pass through the entire dataset.
-        shuffleDataset(&dataset, &targets, num_samples);
+        //shuffleDataset(&dataset, &targets, num_samples);
         double total_loss = 0.0; //accomulator of loss over a single epoch
         for (int i = 0; i < num_samples; i += batch_size) { // iterate through the dataset in batches.
             int current_batch_size = (i + batch_size > num_samples) ? (num_samples - i) : batch_size;// if it's the last batch, probably it's smaller than others
@@ -480,7 +480,7 @@ void splitDataset(int *train_size, int *test_size, int *validation_size,
 }
 
 int main(int argc, char *argv[]){
-
+    printf("Hello, World!\n");
     const char* filename = "/home/pavka/multiprocessing-NN/serial/datasets/california.csv";
     double **dataset = NULL, **targets = NULL;
     int n_samples = 0;
@@ -504,7 +504,7 @@ int main(int argc, char *argv[]){
     // Define learning parameters
     double learning_rate = 0.001;
     int num_epochs = 500;
-    int batch_size = 64; // Adjust based on your dataset size and memory constraints
+    int batch_size = 34; // Adjust based on your dataset size and memory constraints
     // Train MLP
     trainMLP(mlp, train_data, train_targets, train_size, num_epochs, learning_rate, batch_size, sigmoid, dsigmoid);
     double error = evaluateMLP(mlp,test_data,test_targets,test_size, sigmoid);
