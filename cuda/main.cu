@@ -281,7 +281,6 @@ __global__ void compute_deltas(MLP mlp, int start){
         // (predicted-target) [hadamard] step(logits)
         deltas[n_layers - 1][row * n_cols + col] = (activations[n_layers-1][row * n_cols + col] - labels[row * n_cols + col]) * (activations[n_layers - 1][row * n_cols + col] >= 0) ? (1) : (0); 
         // deltas[n_layers - 1][row * n_cols + col] = (float)idx;
-        // Print deltas
 
 
 
@@ -357,7 +356,7 @@ __global__ void backpropagation(MLP mlp, int start){
     // Bias gradients
 
     // Weight gradients
-    // // Backward pass
+    // Backward pass
     // for(int i = n_layers - 1; i >= 0; i--){
     //     int n_rows = i == 0 ? N_FEATURES : layers[i - 1];
     //     int n_cols = i == n_layers ? N_LABELS : layers[i];
@@ -392,11 +391,14 @@ __global__ void backpropagation(MLP mlp, int start){
     //                 sum += weights[i + 1][k] * deltas[i + 1][k];
     //             }
     //             deltas[i][j] = (1 - activations[i][j]) * activations[i][j] * sum;
+    //         }
         
 
         
+    //     }
+    // }
+
 }
-
 void train(const MLP mlp, int epochs, int batch_size, int n_samples){
     printf("Training...\n");
 
