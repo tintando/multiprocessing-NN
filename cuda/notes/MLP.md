@@ -48,6 +48,7 @@ Store all a_i and logit_i (before afunc)
 3. get final gradients
 	1. g_b = d^l
 	2. `g_w_jk = a_k^(l-1)*d_j^l` 
+4. do this for every sample in batch, then average the gradients and multiply by learning rate
 ![[backprop.png]]
 
 struct MLP {
