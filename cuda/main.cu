@@ -27,7 +27,11 @@ struct MLP {
     float* labels; //array of floats
 };
 
-
+// in case of a error, it will print:
+//  -the file where the error was,
+//  -the line that generated the error
+//  -the line of code itself
+//  -the error
 void checkCudaError(cudaError_t error){
     if (error != cudaSuccess) {
         printf("Error: %s:%d, ", __FILE__, __LINE__);
@@ -38,12 +42,15 @@ void checkCudaError(cudaError_t error){
 
 
 float** d_allocateWeightShaped(int* layers, int n_layers){
-    float** d_weights;
+    float** d_weights;// pointer to array of 2d matrix of weights in the device, each matrix[i] = weights between neurons of layer[i] and layer[i-1]
+    // allocating memory for weights in the device, store the pointer in d_weights
+    // allocates memory for weights of each layer
     checkCudaError(cudaMalloc((void**)&d_weights, (n_layers + 1) * sizeof(float*)));
-    float** weights = (float**)malloc((n_layers + 1) * sizeof(float*));
+    float** weights = (float**)malloc((n_layers + 1) * sizeof(float*));// pointer to matrix of weights in the device
     for(int i = 0; i < n_layers + 1; i++) {
-        int n_rows = i == 0 ? N_FEATURES : layers[i - 1];
-        int n_cols = i == n_layers ? N_LABELS : layers[i];
+        // weights[layer]= 2D matrix: entry[i][j]
+        int n_rows = i == 0 ? N_FEATURES : layers[i - 1];// neurons of previous layer
+        int n_cols = i == n_layers ? N_LABELS : layers[i];// neurons of this layer
         // printf("Weights %d: %d x %d\n", i, n_rows, n_cols);
         checkCudaError(cudaMalloc(&weights[i], n_rows * n_cols * sizeof(float)));
         if(weights[i] == NULL) {
@@ -273,8 +280,10 @@ __global__ void compute_deltas(MLP mlp, int start){
         
         // (predicted-target) [hadamard] step(logits)
         deltas[n_layers - 1][row * n_cols + col] = (activations[n_layers-1][row * n_cols + col] - labels[row * n_cols + col]) * (activations[n_layers - 1][row * n_cols + col] >= 0) ? (1) : (0); 
-        printf("deltas[%d]: %f\n", idx, deltas[n_layers - 1][row * n_cols + col]);
-        __syncthreads();
+        // deltas[n_layers - 1][row * n_cols + col] = (float)idx;
+        // Print deltas
+
+
 
         // Compute deltas for the hidden layers
         for(int i = n_layers - 2; i > 0; i--){
@@ -283,25 +292,47 @@ __global__ void compute_deltas(MLP mlp, int start){
             int n_values = n_rows * n_cols;
             float sum = 0;
             if (idx < n_values){
-                for(int k = 0; k < layers[i + 1]; k++){
-                    sum += weights[i + 1][idx * layers[i + 1] + k] * deltas[i + 1][k];
-                }
-                if (idx == 0) {
-                    deltas[i][idx] = (float)42069;
-                } else {
-                    deltas[i][idx] = (1 - activations[i][idx]) * activations[i][idx] * sum;
-                }
+                // for(int k = 0; k < layers[i + 1]; k++){
+                //     sum += weights[i + 1][idx * layers[i + 1] + k] * deltas[i + 1][k];
+                // }
+                // if (idx == 0) {
+                //     deltas[i][idx] = (float)42069;
+                // } else {
+                //     deltas[n_layers - 1][row * n_cols + col] = (activations[n_layers-1][row * n_cols + col] - labels[row * n_cols + col]);
+                // }
                 //d^(l+1)*W^l+1^T [hadamard] afunc'(logit^l)
-                // deltas[i][idx] = (1 - activations[i][idx]) * activations[i][idx] * sum;
+                //BSIZExLAYERS[i+1] LAYERS[i+1]xLAYERS[i] = BSIZExLAYERS[i] [hadamard] sig(logit^l)(1-sig(logit^l))
+                //for every logits compute sig*1-sig, for value in delta multiply by corresponding logit
+                //resulting delta contains on each row the deltas for a sample, and columns the neurons
+                if (idx == 0){
+                    // matmul
+                    dim3 blockSize(TILE_SIZE, TILE_SIZE);
+                    dim3 gridSize((n_cols + blockSize.x - 1) / blockSize.x, (batch_size + blockSize.y - 1) / blockSize.y);
+                    MatMul<<<gridSize, blockSize>>>(deltas[i+1], weights[i+1], deltas[i], batch_size, layers[i+1], layers[i+1], layers[i], batch_size, layers[i]);
+                    cudaDeviceSynchronize();
+                }
+                __syncthreads();
+                deltas[i][idx] *= (1 - logits[i][idx]) * logits[i][idx];
+                // each thread computes sig*1-sig and multiplies to their logit
+                // deltas[i][idx] = (1 - activations[i][idx]) * activations[i][idx]
                 __syncthreads();
             }
-            // for(int j = 0; j < n_values; j++){
-            //     float sum = 0;
-            //     for(int k = 0; k < layers[i + 1]; k++){
-            //         sum += weights[i + 1][j * layers[i + 1] + k] * deltas[i + 1][k];
-            //     }
-            //     deltas[i][j] = (1 - activations[i][j]) * activations[i][j] * sum;
-            // }
+        }
+        if (idx == 0) {
+            printf("deltas[%d]:\n", idx);
+            for(int i = 0; i < n_layers; i++){
+                int n_rows = batch_size;
+                int n_cols = layers[i];
+                for(int j = 0; j < n_rows; j++){
+                    for(int k = 0; k < n_cols; k++){
+                        printf("%f ", deltas[i][j * n_cols + k]);
+                    }
+                    printf("\n");
+                }
+                printf("\n");
+            }
+            printf("deltas[%d]: %f\n", idx, deltas[n_layers - 1][row * n_cols + col]);
+            __syncthreads();
         }
     }
 }
@@ -583,8 +614,8 @@ int main(int argc, char* argv[]) {
     // coalesce features and labels
     printf("HOST: Coalescing features and labels...\n");
     
-    float* h_features = (float*)malloc(n_samples * N_FEATURES * sizeof(float));//array of features
-    float* h_labels = (float*)malloc(n_samples * N_LABELS * sizeof(float));//array of labels
+    float* h_features = (float*)malloc(n_samples * N_FEATURES * sizeof(float));//array of features (on the host)
+    float* h_labels = (float*)malloc(n_samples * N_LABELS * sizeof(float));//array of labels (on the host)
     for(int i = 0; i < n_samples; i++) {
         //copy sample by sample from host to device
         //can be read as: 
@@ -594,13 +625,14 @@ int main(int argc, char* argv[]) {
     }
     
     printf("HOST: Allocating device memory...\n");
-    // Allocate memory for the features and labels on the device and copy
-    float* d_features;
-    float* d_labels;
-    checkCudaError(cudaMalloc((void**)&d_features, n_samples * N_FEATURES * sizeof(float)));
-    cudaMemcpy(d_features, h_features, n_samples * N_FEATURES * sizeof(float), cudaMemcpyHostToDevice);
-    checkCudaError(cudaMalloc((void**)&d_labels, n_samples * N_LABELS * sizeof(float)));
-    cudaMemcpy(d_labels, h_labels, n_samples * N_LABELS * sizeof(float), cudaMemcpyHostToDevice);
+    
+    float* d_features;// array of features (on the device)
+    float* d_labels;// array of labels (on the device)
+    for(int i = 0; i < n_samples; i++) {
+    checkCudaError(cudaMalloc((void**)&d_features, n_samples * N_FEATURES * sizeof(float))); //allocates features in device memory  
+    cudaMemcpy(d_features, h_features, n_samples * N_FEATURES * sizeof(float), cudaMemcpyHostToDevice);// initializes features in device memory  
+    checkCudaError(cudaMalloc((void**)&d_labels, n_samples * N_LABELS * sizeof(float)));// allocates labels in device memory  
+    cudaMemcpy(d_labels, h_labels, n_samples * N_LABELS * sizeof(float), cudaMemcpyHostToDevice);// initializes features in device memory  
 
     // Allocate memory for the weights, biases, activations, logits, gradients, deltas
     printf("HOST: Allocating device memory for weights, biases, activations, logits, gradients, deltas...\n");
@@ -693,9 +725,9 @@ int main(int argc, char* argv[]) {
 
     // gpu_print_features<<<1, 32>>>(d_features);
 
-    printActivationShaped(mlp, layers, 1);
-    printActivationShaped(mlp, layers, 2);
-    printActivationShaped(mlp, layers, 3);
+    printActivationShaped(mlp, layers, 1); // logits
+    printActivationShaped(mlp, layers, 2); // activations
+    // printActivationShaped(mlp, layers, 3); // deltas
 
     // cuda_hello<<<1,1>>>();
     cudaDeviceSynchronize();
