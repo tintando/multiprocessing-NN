@@ -250,7 +250,7 @@ __global__ void forward_pass(const MLP mlp, int batch_size, int start){
     }
 
 }
-__global__ void compute_deltas(MLP mlp){
+__global__ void compute_deltas(MLP mlp, int start){
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     int n_layers = mlp.n_layers;
     int batch_size = mlp.batch_size;
@@ -260,7 +260,7 @@ __global__ void compute_deltas(MLP mlp){
     float** logits = mlp.logits;
     float** deltas = mlp.deltas;
     float* inputs = mlp.inputs;
-    float* labels = mlp.labels;
+    float* labels = mlp.labels + start * N_LABELS * sizeof(float);
 
     // Compute deltas for the output layer
     int n_rows = batch_size;
@@ -272,8 +272,8 @@ __global__ void compute_deltas(MLP mlp){
         int row = idx / n_cols;
         
         // (predicted-target) [hadamard] step(logits)
-        deltas[n_layers - 1][idx] = activations[n_layers-1][row * n_cols + col] * (activations[n_layers - 1][idx] >= 0) ? (1) : (0); 
-        printf("deltas[%d]: %f\n", idx, deltas[n_layers - 1][idx]);
+        deltas[n_layers - 1][row * n_cols + col] = (activations[n_layers-1][row * n_cols + col] - labels[row * n_cols + col]) * (activations[n_layers - 1][row * n_cols + col] >= 0) ? (1) : (0); 
+        printf("deltas[%d]: %f\n", idx, deltas[n_layers - 1][row * n_cols + col]);
         __syncthreads();
 
         // Compute deltas for the hidden layers
@@ -293,6 +293,7 @@ __global__ void compute_deltas(MLP mlp){
                 }
                 //d^(l+1)*W^l+1^T [hadamard] afunc'(logit^l)
                 // deltas[i][idx] = (1 - activations[i][idx]) * activations[i][idx] * sum;
+                __syncthreads();
             }
             // for(int j = 0; j < n_values; j++){
             //     float sum = 0;
@@ -304,7 +305,7 @@ __global__ void compute_deltas(MLP mlp){
         }
     }
 }
-__global__ void backpropagation(MLP mlp){
+__global__ void backpropagation(MLP mlp, int start){
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     int n_layers = mlp.n_layers;
     int* layers = mlp.layers;
@@ -321,7 +322,7 @@ __global__ void backpropagation(MLP mlp){
     int n_values = mlp.layers[mlp.n_layers - 2] * mlp.layers[mlp.n_layers - 1];
     int threads_per_block = 256;
     int blocks_per_grid = (n_values + threads_per_block - 1) / threads_per_block;
-    compute_deltas<<<blocks_per_grid, threads_per_block>>>(mlp);
+    compute_deltas<<<blocks_per_grid, threads_per_block>>>(mlp, start);
     // Bias gradients
 
     // Weight gradients
@@ -377,7 +378,7 @@ void train(const MLP mlp, int epochs, int batch_size, int n_samples){
         printf("Layer %d: %d\n", i, h_layers[i]);
     }
 
-    
+
     for(int i = 0; i < epochs; i++){     // for(int i = 0; i < 1; i++){
 
         printf("Epoch %d\n", i);
@@ -388,7 +389,7 @@ void train(const MLP mlp, int epochs, int batch_size, int n_samples){
             cudaDeviceSynchronize();
 
         // Backward pass
-            backpropagation<<<1,1>>>(mlp);
+            backpropagation<<<1,1>>>(mlp, start);
             cudaDeviceSynchronize();
         }
     }
@@ -581,10 +582,13 @@ int main(int argc, char* argv[]) {
     MLP mlp;
     // coalesce features and labels
     printf("HOST: Coalescing features and labels...\n");
-    //array of features?
-    float* h_features = (float*)malloc(n_samples * N_FEATURES * sizeof(float));
-    float* h_labels = (float*)malloc(n_samples * N_LABELS * sizeof(float));
+    
+    float* h_features = (float*)malloc(n_samples * N_FEATURES * sizeof(float));//array of features
+    float* h_labels = (float*)malloc(n_samples * N_LABELS * sizeof(float));//array of labels
     for(int i = 0; i < n_samples; i++) {
+        //copy sample by sample from host to device
+        //can be read as: 
+        // move in h_features[i*N_FEATURES] = samples[i].features
         memcpy(h_features + i * N_FEATURES, samples[i].features, N_FEATURES * sizeof(float));
         h_labels[i] = samples[i].label;
     }

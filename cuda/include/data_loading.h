@@ -1,6 +1,8 @@
 #ifndef DATA_LOADING_H
 #define DATA_LOADING_H
 
+// float features[8];
+// float label;
 struct Sample {
     float features[8];
     float label;
