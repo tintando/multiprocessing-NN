@@ -11,7 +11,7 @@
 #define next_layer current_layer+1
 #define N_FEATURES 8
 #define N_LABELS 1
-#define NUM_THREADS 1
+#define NUM_THREADS 16
 
 pthread_mutex_t mutex;// To ensure exclusive access during accomulation of biases and weights in the fast forward
 
@@ -52,7 +52,7 @@ typedef struct MLP {
 // double learning_rate;
 // double *batch_loss;
 // MLP *mlp;
-struct thread_data{
+struct Thread_data{
     int thread_id;
     int my_start_index;
     int my_end_index;
@@ -69,6 +69,19 @@ struct thread_data{
     double*** grad_weights_accumulators;
     double** grad_biases_accumulator;
         
+};
+
+struct Thread_data_evaluation{
+    int thread_id;
+    int my_start_index;
+    int my_end_index;
+    int test_size;
+    double **inputs;
+    double **targets;
+    double **my_neuron_activations;
+    double* total_error;
+    ActivationFunction act;
+    MLP *mlp;
 };
 
 
@@ -92,6 +105,16 @@ void applyActivationFunction(double *layer, int size, ActivationFunction activat
 void initializeXavier(double *weights, int in, int out);
 void loadAndPrepareDataset(const char* filename, double ***dataset, double ***targets, int *n_samples);
 void shuffleDataset(double ***dataset, double ***targets, int n_samples);
+void splitDataset(int *train_size, int *test_size, int *validation_size, 
+                double*** train_data, double*** train_targets, 
+                double*** test_data, double*** test_targets, 
+                double*** validation_data, double*** validation_targets, 
+                double*** dataset, double*** targets, int *n_samples);
+void *thread_action(void *args_p);
+void *feedforward_validation(void *args_p);
+void *thread_action(void *args_p);
+void *feedforward_validation(void *args_p);
+
 
 // Allocates memory for the MLP structures and initializes them,
 // including the Xavier method for initializing weights.
@@ -202,11 +225,41 @@ void feedforward(MLP *mlp, double** my_neuron_activations, double *input, Activa
     applyActivationFunction(my_neuron_activations[mlp->num_hidden_layers], mlp->output_size, act);
 }
 
+void *feedforward_validation(void *args_p) {
+
+    struct Thread_data_evaluation *args = (struct Thread_data_evaluation *)args_p;
+    int id = args->thread_id;
+    int my_start_index = args->my_start_index;
+    int my_end_index = args->my_end_index;
+    double **inputs = args->inputs;
+    double **targets = args->targets;
+    double **my_neuron_activations = args->my_neuron_activations;
+    double *total_error = args->total_error;
+    ActivationFunction act = args->act;
+    MLP *mlp = args->mlp;
+    
+    for (int i = my_start_index; i < my_end_index; i++) {
+        feedforward(mlp, my_neuron_activations, inputs[i], act);
+    }
+
+    double *prediction = mlp->neuron_activations[mlp->num_hidden_layers];
+    
+    for (int i = my_start_index; i < my_end_index; i++) {
+        for (int j = 0; j < mlp->output_size; j++) {
+            double error = targets[i][j] - prediction[j];
+            pthread_mutex_lock(&mutex);
+            total_error[0] += error * error;
+            pthread_mutex_unlock(&mutex);
+        }
+    }
+    return NULL;
+}
+
 
 
 void *thread_action(void *args_p){
     
-    struct thread_data *args = (struct thread_data *)args_p;
+    struct Thread_data *args = (struct Thread_data *)args_p;
 
     int id = args->thread_id;
     int my_start_index = args->my_start_index;
@@ -257,10 +310,8 @@ void *thread_action(void *args_p){
             // Accumulate gradients for weights and biases per batch
             for (int neuron = 0; neuron < size_out; neuron++) {// for each neuron in current layer
                 for (int input_neuron = 0; input_neuron < size_in; input_neuron++) {// for each neuron in previous layer
-                    //gradient = delta[current_layer][neuron] * previous layer neuron value
-                    double checkkkkkkkkkkkkkkkkk= my_delta[current_layer][neuron];
-                    double my_grad = my_delta[current_layer][neuron] * (current_layer == 0 ? inputs[sample][input_neuron] : my_neuron_activations[previous_layer][input_neuron]);
-                    printf("my_delta[%d][%d] = %.10f\n",current_layer,neuron,my_delta[current_layer][neuron]);
+                    //gradient = delta[current_layer][neuron] * previous layer neuron value             
+                    double my_grad = my_delta[current_layer][neuron] * (current_layer == 0 ? inputs[sample][input_neuron] : my_neuron_activations[previous_layer][input_neuron]);             
                     pthread_mutex_lock(&mutex);
                     grad_weights_accumulators[current_layer][neuron][input_neuron] += my_grad;
                     pthread_mutex_unlock(&mutex);
@@ -319,7 +370,7 @@ double backpropagation(MLP *mlp, double **inputs, double **targets, int current_
     pthread_t* thread_handles =  (pthread_t*) malloc(NUM_THREADS*sizeof(pthread_t));//contains threads of this batch
     for (thread=0; thread<NUM_THREADS;thread++){
         
-        struct thread_data *args = (struct thread_data *)malloc(sizeof(struct thread_data)); //parameters of thread
+        struct Thread_data *args = (struct Thread_data *)malloc(sizeof(struct Thread_data)); //parameters of thread
         args->thread_id = thread;
         args->my_start_index = thread*current_batch_size/NUM_THREADS;
         args->my_end_index = ((thread+1)*current_batch_size/NUM_THREADS);
@@ -338,8 +389,7 @@ double backpropagation(MLP *mlp, double **inputs, double **targets, int current_
             int layer_size = (i == mlp->num_hidden_layers) ? mlp->output_size : mlp->hidden_layers_size[i];
             args->my_neuron_activations[i] = (double *)calloc(layer_size, sizeof(double));
             args->my_delta[i] = (double *)calloc(layer_size , sizeof(double));
-        }
-    
+            }
         args->act = act;
         args->dact = dact;
         args->learning_rate = learning_rate;
@@ -347,7 +397,6 @@ double backpropagation(MLP *mlp, double **inputs, double **targets, int current_
         args->batch_loss = batch_loss;
         args->grad_weights_accumulators = grad_weights_accumulators;
         args->grad_biases_accumulator = grad_biases_accumulator;
-        
         pthread_create(&thread_handles[thread],NULL, thread_action, (void*) args);
         
     }
@@ -414,7 +463,7 @@ void trainMLP(MLP *mlp, double **dataset, double **targets, int num_samples, int
     }
     for (int epoch = 0; epoch < num_epochs; epoch++) {
         //An epoch is a single pass through the entire dataset.
-        //shuffleDataset(&dataset, &targets, num_samples);
+        shuffleDataset(&dataset, &targets, num_samples);
         double total_loss = 0.0; //accomulator of loss over a single epoch
         //dividing in batch
         for (int i = 0; i < num_samples; i += batch_size) { // iterate through the dataset in batches.
@@ -442,23 +491,39 @@ void trainMLP(MLP *mlp, double **dataset, double **targets, int num_samples, int
 
 double evaluateMLP(MLP *mlp, double **test_data, double **test_targets, int test_size, ActivationFunction act) {
     double total_error = 0.0;
-    for (int i = 0; i < test_size; i++) {
-        // Feedforward to get the prediction
-        //feedforward(mlp, test_data[i], act);
-
-        // Assuming the last layer's activations are the predictions
-        double *prediction = mlp->neuron_activations[mlp->num_hidden_layers];
-        
-        // Calculate error for this sample
-        for (int j = 0; j < mlp->output_size; j++) {
-            double error = test_targets[i][j] - prediction[j];
-            total_error += error * error; // For MSE, sum the squared error
+    long thread;
+    pthread_t* thread_handles =  (pthread_t*) malloc(NUM_THREADS*sizeof(pthread_t)); //contains threads of this batch
+    for (thread = 0; thread < NUM_THREADS; thread++){
+        Thread_data_evaluation* args = (Thread_data_evaluation*)malloc(sizeof(Thread_data_evaluation));//data for the threads
+        args->thread_id = thread;
+        args->my_start_index = thread*test_size/NUM_THREADS; 
+        args->my_end_index = ((thread+1)*test_size/NUM_THREADS);
+        args->inputs = test_data;
+        args->targets = test_targets;
+        args->my_neuron_activations = (double **)malloc((mlp->num_hidden_layers + 1) * sizeof(double *));
+        args->test_size = test_size;
+        args->mlp = mlp;
+        args->act = act;
+        args->total_error = (double*)calloc(1,sizeof(double));
+        for(int i = 0; i < mlp->num_hidden_layers + 1; i++){
+            args->my_neuron_activations[i] = (double *)calloc(mlp->output_size, sizeof(double));
         }
+        
+        //for (index=my_start_index; index<my_end_index; index++)
+        pthread_create(&thread_handles[thread],NULL, feedforward_validation, (void*) args);
+        total_error += args->total_error[0];
+        
     }
+     
+    for(thread = 0; thread < NUM_THREADS; thread++){
+        pthread_join(thread_handles[thread],NULL);
 
+    }
     // Return average MSE over the test set
     return total_error / (test_size * mlp->output_size);
 }
+
+
 
 double sigmoid(double x) {
     return 1.0 / (1.0 + exp(-x));
@@ -637,12 +702,12 @@ int main(int argc, char *argv[]){
 
     // Define learning parameters
     double learning_rate = 0.01;
-    int num_epochs = 1;
-    int batch_size = 32; // Adjust based on your dataset size and memory constraints
+    int num_epochs = 500;
+    int batch_size = 128; // Adjust based on your dataset size and memory constraints
     // Train MLP
     trainMLP(mlp, train_data, train_targets, train_size, num_epochs, learning_rate, batch_size, sigmoid, dsigmoid);
-    //double error = evaluateMLP(mlp,test_data,test_targets,test_size, sigmoid);
-    //printf("error is %f\n",error);
+    double error = evaluateMLP(mlp,test_data,test_targets,test_size, sigmoid);
+    printf("error is %f\n",error);
 
     // Clean up
     for (int i = 0; i < n_samples; i++) {

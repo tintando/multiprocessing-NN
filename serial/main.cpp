@@ -480,7 +480,6 @@ void splitDataset(int *train_size, int *test_size, int *validation_size,
 }
 
 int main(int argc, char *argv[]){
-    printf("Hello, World!\n");
     const char* filename = "/home/pavka/multiprocessing-NN/serial/datasets/california.csv";
     double **dataset = NULL, **targets = NULL;
     int n_samples = 0;
@@ -504,7 +503,7 @@ int main(int argc, char *argv[]){
     // Define learning parameters
     double learning_rate = 0.001;
     int num_epochs = 500;
-    int batch_size = 34; // Adjust based on your dataset size and memory constraints
+    int batch_size = 128; // Adjust based on your dataset size and memory constraints
     // Train MLP
     trainMLP(mlp, train_data, train_targets, train_size, num_epochs, learning_rate, batch_size, sigmoid, dsigmoid);
     double error = evaluateMLP(mlp,test_data,test_targets,test_size, sigmoid);
