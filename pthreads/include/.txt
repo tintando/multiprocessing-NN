@@ -1,0 +1,97 @@
+
+Thread_args* createThreadArgs(MLP *mlp, long thread_id){
+    //args for the specific thread
+    Thread_args* args = (Thread_args*) malloc(sizeof(Thread_args));
+    if (!args) return NULL;
+    printf("initializing args for thread %d\n", thread_id);
+    args->thread_id = thread_id;
+    printf("thread id is %ld but it is supposed to be %ld\n", thread_id, args->thread_id);
+}
+
+void trainMLP(Data train_dataset, MLP* mlp, int num_epochs, int batch_size, int learning_rate){
+    
+    //initialize thread data structures
+    pthread_t threads[NUM_THREADS]; //thread identifier
+    Thread_args* thread_args[NUM_THREADS]; // array of thread data, one specific for thread
+
+    //Initializes the variables that are persistent in the epochs or data stractures that keep the same shape
+    for(long thread_id=0; thread_id < NUM_THREADS; thread_id++){
+        thread_args[thread_id] = createThreadArgs(mlp,thread_id); 
+        thread_args[thread_id]->dataset = &train_dataset;
+        //printThreadArgs(thread_args[thread]);
+        pthread_create(&threads[thread_id], NULL,  thread_action, (void *)&thread_args[thread_id]);
+        pthread_join(threads[thread_id], NULL);
+    }
+
+void *thread_action(void *voidArgs){
+
+    Thread_args *args = (Thread_args *)voidArgs;
+    printf("Hello world from thread %ld\n", args->thread_id);
+}
+
+why do i get this big numbers and not the logical thread id??
+
+initializing args for thread 0
+thread id is 0 but it is supposed to be 0
+outside the thread: 0
+Hello world from thread 93846129476768
+initializing args for thread 1
+thread id is 1 but it is supposed to be 1
+outside the thread: 1
+Hello world from thread 93846134756384
+initializing args for thread 2
+thread id is 2 but it is supposed to be 2
+outside the thread: 2
+Hello world from thread 93846134757696
+initializing args for thread 3
+thread id is 3 but it is supposed to be 3
+outside the thread: 3
+Hello world from thread 93846134759008
+initializing args for thread 4
+thread id is 4 but it is supposed to be 4
+outside the thread: 4
+Hello world from thread 93846134760320
+initializing args for thread 5
+thread id is 5 but it is supposed to be 5
+outside the thread: 5
+Hello world from thread 93846134761632
+initializing args for thread 6
+thread id is 6 but it is supposed to be 6
+outside the thread: 6
+Hello world from thread 93846134762944
+initializing args for thread 7
+thread id is 7 but it is supposed to be 7
+outside the thread: 7
+Hello world from thread 93846134764256
+initializing args for thread 8
+thread id is 8 but it is supposed to be 8
+outside the thread: 8
+Hello world from thread 93846134765568
+initializing args for thread 9
+thread id is 9 but it is supposed to be 9
+outside the thread: 9
+Hello world from thread 93846134766880
+initializing args for thread 10
+thread id is 10 but it is supposed to be 10
+outside the thread: 10
+Hello world from thread 93846134768192
+initializing args for thread 11
+thread id is 11 but it is supposed to be 11
+outside the thread: 11
+Hello world from thread 93846134769504
+initializing args for thread 12
+thread id is 12 but it is supposed to be 12
+outside the thread: 12
+Hello world from thread 93846134770816
+initializing args for thread 13
+thread id is 13 but it is supposed to be 13
+outside the thread: 13
+Hello world from thread 93846134772128
+initializing args for thread 14
+thread id is 14 but it is supposed to be 14
+outside the thread: 14
+Hello world from thread 93846134773440
+initializing args for thread 15
+thread id is 15 but it is supposed to be 15
+outside the thread: 15
+Hello world from thread 93846134774752

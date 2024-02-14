@@ -21,32 +21,40 @@ typedef double (*ActivationFunction)(double);
 typedef double (*ActivationFunctionDerivative)(double);
 
 /*structure of MLP
-input size = # of nodes in first layer
-output size = # of nodes in last layer
-num_hidden_layers = # of hidden layers in neural network
-hideen_layers_size = array where each entry is the number of nodes in that layer
+- input size = # of nodes in first layer (int)
+- output size = # of nodes in last layer (int)
+- num_hidden_layers = # of hidden layers in neural network (int)
+- hideen_layers_size = array where each entry is the number of nodes in that layer (array of int)
 ex: layer1 = 3 nodes, layer2 = 6, layer3 = 10 then hidden_layer_size=[3,6,10] and num_hidden_layers=3
-neuron_activation[layer][node] = ...
-weights[layer][hideen_layers_size[layer]*hideen_layers_size[layer-1]] =
+- neuron_activation[layer][node] = array of pointers(without comprehending input layer) to doubles
+- weights[layer][hideen_layers_size[layer]*hideen_layers_size[layer-1]] = (array of pointers (layer) (does not comprehend input llayer) to linearized 2D matrix)
                = weight between a node of the current layer and a node of previous layer
-2d array biases[layer][node]*/
+- array of pointers to array of biases [layer][node] does not comprehend input llayer)*/
 typedef struct MLP {
-    int input_size; // number of nodes in first layer
-    int output_size; // numebr of nodes in last layer
-    int num_hidden_layers; // numebr of hidden layers in neural network
-    int *hidden_layers_size; // array where each entry is the # of nodes in that layer
-    double **neuron_activations;
-    // weight between a node of the current layer and a node of previous layer 
+    int num_layers; // numebr of hidden layers in neural network
+    int *layers_sizes; // array where each entry is the # of nodes in that layer
+    double **neuron_activations;//neuron activations of each layer
+
+    // weight between a node of the current layer and a node of previous layer, (it start from first hidden layer)
     // [layer][hideen_layers_size[layer]*hideen_layers_size[layer-1]]
-    double **weights; 
-    double **biases;
+    double **weights; //note input lauer doesnt have weights
+    double **biases;// note: input layer doesn0t have bias
 } MLP;
+
 
 typedef struct Data {
     double** samples; 
     double** targets;
     int size; // number of samples
 }Data;
+
+typedef struct Dataset {
+    Data train;
+    Data test;
+    Data validation;
+}Dataset;
+
+
 
 void printData(Data data) {
     printf("Samples:\n");
@@ -69,106 +77,106 @@ void printData(Data data) {
 }
 
 
-typedef struct Dataset {
-    Data train;
-    Data test;
-    Data validation;
-}Dataset;
+void printMLP(const MLP *mlp) {
+    printf("MLP Structure:\n");
+    printf("Number of Layers: %d\n", mlp->num_layers);
 
-//initializing all the functions for the compiler :)
-
-MLP *createMLP(int input_size, int output_size, int num_hidden_layers, int *hidden_layers_size);
-void initializeXavier(double *weights, int in, int out);
-void feedforward(MLP *mlp, double** neuron_activation, double *input, ActivationFunction act);
-double backpropagation(MLP *mlp, double **inputs, double **targets, int current_batch_size, ActivationFunction act, ActivationFunctionDerivative dact, double learning_rate);
-void trainMLP(MLP *mlp, double **dataset, double **targets, int num_samples, int num_epochs, double learning_rate, int batch_size, ActivationFunction act, ActivationFunctionDerivative dact);
-double evaluateMLP(MLP *mlp, double **test_data, double **test_targets, int test_size, ActivationFunction act);
-double sigmoid(double x);
-double dsigmoid(double x);
-double relu(double x);
-double drelu(double x);
-//double tanh(double x) already in math.h
-double dtanh(double x);
-void matrixMultiplyAndAddBias(double *output, double *input, double *weights, double *biases, int inputSize, int outputSize);
-void applyActivationFunction(double *layer, int size, ActivationFunction activationFunc);
-void initializeXavier(double *weights, int in, int out);
-void loadAndPrepareDataset(const char* filename, double ***dataset, double ***targets, int *n_samples);
-void shuffleDataset(double ***dataset, double ***targets, int n_samples);
-void splitDataset(int n_samples,
-                double*** train_data, double*** train_targets, 
-                double*** test_data, double*** test_targets, 
-                double*** validation_data, double*** validation_targets, 
-                double*** dataset, double*** targets);
-void *thread_action(void *args_p);
-void *feedforward_validation(void *args_p);
-void *thread_action(void *args_p);
-void *feedforward_validation(void *args_p);
-
-
-// Allocates memory for the MLP structures and initializes them,
-// including the Xavier method for initializing weights.
-MLP *createMLP(int input_size, int output_size, int num_hidden_layers, int *hidden_layers_size) {
-    MLP *mlp = (MLP *)malloc(sizeof(MLP)); //mlp is the pointer to the MLP instance
-    if (!mlp) return NULL;//in case of memory errors, this function returns NULL
-    mlp->input_size = input_size;
-    mlp->output_size = output_size;
-    mlp->num_hidden_layers = num_hidden_layers;
-    // allocate the array of sizes
-    mlp->hidden_layers_size = (int *)malloc(num_hidden_layers * sizeof(int));
-    if (!mlp->hidden_layers_size) {
-        free(mlp);
-        return NULL;
+    // Print sizes of each layer
+    for (int i = 0; i < mlp->num_layers; i++) {
+        printf("Layer %d size: %d\n", i, mlp->layers_sizes[i]);
     }
-    //initialize the array of sizes
-    for (int i = 0; i < num_hidden_layers; i++) {
-        mlp->hidden_layers_size[i] = hidden_layers_size[i];
-    }
-    // allocate neuron_activations, weights, biases
-    mlp->neuron_activations = (double **)malloc((num_hidden_layers + 1) * sizeof(double *));
-    mlp->weights = (double **)malloc((num_hidden_layers + 1) * sizeof(double *));
-    mlp->biases = (double **)malloc((num_hidden_layers + 1) * sizeof(double *));
-    if (!mlp->neuron_activations || !mlp->weights || !mlp->biases) {
-        //errors
-        free(mlp->hidden_layers_size);
-        if (mlp->neuron_activations) free(mlp->neuron_activations);
-        if (mlp->weights) free(mlp->weights);
-        if (mlp->biases) free(mlp->biases);
-        free(mlp);
-        return NULL;
-    }
-    // initialize neuron_activations, weights, biases
-    int prev_layer_size = input_size;//keeps track of the size of previous layer, starts with size of input
-    for (int i = 0; i <= num_hidden_layers; i++) {
-        int layer_size = (i == num_hidden_layers) ? output_size : hidden_layers_size[i]; //size of current layer
-        mlp->neuron_activations[i] = (double *)calloc(layer_size, sizeof(double)); // allocates and initializes to 0
-        mlp->weights[i] = (double *)malloc(prev_layer_size * layer_size * sizeof(double)); //allocates
-        mlp->biases[i] = (double *)calloc(layer_size, sizeof(double)); // allocates and initializes to 0
 
-        if (!mlp->neuron_activations[i] || !mlp->weights[i] || !mlp->biases[i]) {
-            for (int j = 0; j < i; j++) {
-                free(mlp->neuron_activations[j]);
-                free(mlp->weights[j]);
-                free(mlp->biases[j]);
-            }
-            free(mlp->neuron_activations);
-            free(mlp->weights);
-            free(mlp->biases);
-            free(mlp->hidden_layers_size);
-            free(mlp);
-            return NULL;
+    // Print neuron activations
+    for (int i = 0; i < mlp->num_layers; i++) {
+        printf("Layer %d activations: ", i);
+        for (int j = 0; j < mlp->layers_sizes[i]; j++) {
+            printf("%lf ", mlp->neuron_activations[i][j]);
         }
-
-        initializeXavier(mlp->weights[i], prev_layer_size, layer_size); //initialize weights
-
-        prev_layer_size = layer_size;
+        printf("\n");
     }
 
-    return mlp;
+    // Print weights
+    for (int i = 1; i < mlp->num_layers; i++) { // Start from 1 since weights are between layers
+        printf("Weights to Layer %d: \n", i);
+        for (int j = 0; j < mlp->layers_sizes[i]; j++) {
+            for (int k = 0; k < mlp->layers_sizes[i-1]; k++) {
+                printf("W[%d][%d]: %lf ", j, k, mlp->weights[i][j * mlp->layers_sizes[i-1] + k]);
+            }
+            printf("\n");
+        }
+    }
+
+    // Print biases
+    for (int i = 1; i < mlp->num_layers; i++) {
+        printf("Layer %d biases: ", i);
+        for (int j = 0; j < mlp->layers_sizes[i]; j++) {
+            printf("%lf ", mlp->biases[i][j]);
+        }
+        printf("\n");
+    }
 }
 
+void freeDataset(Dataset* dataset) {
+    // Free train samples and targets
+    for (int i = 0; i < dataset->train.size; i++) {
+        free(dataset->train.samples[i]);
+        free(dataset->train.targets[i]);
+    }
+    free(dataset->train.samples);
+    free(dataset->train.targets);
 
+    // Free test samples and targets
+    for (int i = 0; i < dataset->test.size; i++) {
+        free(dataset->test.samples[i]);
+        free(dataset->test.targets[i]);
+    }
+    free(dataset->test.samples);
+    free(dataset->test.targets);
 
+    // If you have validation data, free it similarly here
+}
 
+void freeMLP(MLP *mlp) {
+    if (!mlp) return; // Check if mlp is NULL
+
+    // Free neuron activations
+    if (mlp->neuron_activations) {
+        for (int i = 0; i < mlp->num_layers; i++) {
+            if (mlp->neuron_activations[i]) {
+                free(mlp->neuron_activations[i]);
+            }
+        }
+        free(mlp->neuron_activations);
+    }
+
+    // Free weights
+    if (mlp->weights) {
+        for (int i = 1; i < mlp->num_layers; i++) { // Note: weights array starts from layer 1
+            if (mlp->weights[i-1]) { // Adjusted index because weights start from layer 1
+                free(mlp->weights[i-1]);
+            }
+        }
+        free(mlp->weights);
+    }
+
+    // Free biases
+    if (mlp->biases) {
+        for (int i = 1; i < mlp->num_layers; i++) { // Note: biases array starts from layer 1
+            if (mlp->biases[i-1]) { // Adjusted index because biases start from layer 1
+                free(mlp->biases[i-1]);
+            }
+        }
+        free(mlp->biases);
+    }
+
+    // Free layers sizes
+    if (mlp->layers_sizes) {
+        free(mlp->layers_sizes);
+    }
+
+    // Finally, free the MLP structure itself
+    free(mlp);
+}
 
 //popular way to initialize weights
 //helps in keeping the signal from the input to flow well into the deep network.
@@ -212,6 +220,75 @@ void applyActivationFunction(double *layer, int size, ActivationFunction activat
 }
 
 
+
+// Allocates memory for the MLP structures and initializes them,
+// including the Xavier method for initializing weights.
+MLP *createMLP(int num_layers, int *layers_size) {
+
+    MLP *mlp = (MLP *)malloc(sizeof(MLP)); //mlp is the pointer to the MLP instance
+    if (!mlp){
+        printf("error allocating MLP structure");
+        return NULL;//in case of memory errors, this function returns NULL
+    } 
+    
+    mlp->num_layers = num_layers;
+
+    // allocate the array of sizes
+    mlp->layers_sizes = (int *)malloc(num_layers * sizeof(int));
+    if (!mlp->layers_sizes) {
+        printf("error allocating layers_size");
+        freeMLP(mlp);
+        return NULL;
+    }
+
+    //initialize the array of sizes
+    for (int i = 0; i < num_layers; i++) {
+        mlp->layers_sizes[i] = layers_size[i];
+    }
+    // allocate neuron_activations, weights, biases
+    mlp->neuron_activations = (double **)malloc(num_layers * sizeof(double *));
+    mlp->weights = (double **)malloc((num_layers - 1) * sizeof(double *));
+    mlp->biases = (double **)malloc((num_layers - 1) * sizeof(double *));
+    if (!mlp->neuron_activations || !mlp->weights || !mlp->biases) {
+        printf("error allocating neuron_activations, weights, biases");
+        freeMLP(mlp);
+        return NULL;
+    }
+
+    // initialize neuron_activations, weights, biases
+    for (int i = 0; i < num_layers; i++) { 
+
+        mlp->neuron_activations[i] = (double *)calloc(layers_size[i], sizeof(double)); // allocates and initializes to 0
+        
+        if (i!=0){// if i = 0 we are in the input layer, which doesn't have weights or biases
+            mlp->weights[i] = (double *)malloc(layers_size[i-1] * layers_size[i] * sizeof(double)); //allocates
+            mlp->biases[i] = (double *)calloc(layers_size[i], sizeof(double)); // allocates and initializes to 0
+            if (!mlp->neuron_activations[i] || !mlp->weights[i] || !mlp->biases[i]) {
+                printf("error allocating neuron_activations[%d]", i);
+                freeMLP(mlp);
+                return NULL;
+            }
+            initializeXavier(mlp->weights[i], layers_size[i-1], layers_size[i]); //initialize weights
+        }
+
+        else {
+            if (!mlp->neuron_activations[i]) {
+                printf("error allocating neuron_activations[0]");
+                freeMLP(mlp);
+                return NULL;
+            }
+        }
+    }
+
+        return mlp;
+    }   
+
+
+
+
+
+
+
 void loadAndPrepareDataset(const char* filename, double ***dataset, double ***targets, int *n_samples) {
     // Read the dataset
     Sample* samples = readDataset(filename, n_samples);//returns a 1D array
@@ -225,7 +302,7 @@ void loadAndPrepareDataset(const char* filename, double ***dataset, double ***ta
     float* h_labels = (float*)malloc(*n_samples * N_LABELS * sizeof(float));
     if (!h_features || !h_labels) {
         printf("Failed to allocate memory for features and labels.\n");
-        free(samples); // Assuming samples need to be freed here
+        delete[] samples; // Assuming samples need to be freed here
         return;
     }
 
@@ -237,7 +314,7 @@ void loadAndPrepareDataset(const char* filename, double ***dataset, double ***ta
 
     // Assuming the responsibility to free samples is here
     // Remember to free the samples' features if they're dynamically allocated
-    free(samples);
+    delete[] samples;
 
     // Allocate memory for dataset and targets
     *dataset = (double**) malloc(*n_samples * sizeof(double*));
@@ -313,3 +390,5 @@ Dataset splitDataset(int n_samples, double*** dataset, double*** targets){
 
     return result;
 }
+
+

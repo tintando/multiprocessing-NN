@@ -5,6 +5,8 @@
 
 #define N_FEATURES 8
 #define N_LABELS 1
+
+//contains features and label for a sample
 struct Sample {
     float features[N_FEATURES];
     float label;
