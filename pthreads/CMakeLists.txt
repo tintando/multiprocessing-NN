@@ -15,6 +15,7 @@ find_package(Threads REQUIRED)
 set(SOURCES
     main.cpp
     src/data_loading.cpp
+    src/neural_network.cpp
 )
 
 add_executable(multithread ${SOURCES})
