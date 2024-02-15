@@ -17,25 +17,24 @@ typedef double (*ActivationFunction)(double);
 typedef double (*ActivationFunctionDerivative)(double);
 
 /*structure of MLP
-- input size = # of nodes in first layer (int)
-- output size = # of nodes in last layer (int)
-- num_hidden_layers = # of hidden layers in neural network (int)
-- hideen_layers_size = array where each entry is the number of nodes in that layer (array of int)
-ex: layer1 = 3 nodes, layer2 = 6, layer3 = 10 then hidden_layer_size=[3,6,10] and num_hidden_layers=3
+- int num_layers; // numebr of hidden layers in neural network
+- int *layers_sizes; // array where each entry is the # of nodes in that layer
+    ex: layer1 = 3 nodes, layer2 = 6, layer3 = 10 then hidden_layer_size=[3,6,10] and num_hidden_layers=3
 - neuron_activation[layer][node] = array of pointers(without comprehending input layer) to doubles
-- weights[layer][hideen_layers_size[layer]*hideen_layers_size[layer-1]] = (array of pointers (layer) (does not comprehend input llayer) to linearized 2D matrix)
+- double **weights[layer][hideen_layers_size[layer]*hideen_layers_size[layer-1]] = (array of pointers (layer) (does not comprehend input llayer) to linearized 2D matrix)
                = weight between a node of the current layer and a node of previous layer
-- array of pointers to array of biases [layer][node] does not comprehend input llayer)*/
+- double **biases array of pointers to array of biases [layer][node] does not comprehend input llayer)*/
 typedef struct MLP {
-    int num_layers; // numebr of layers in neural network
+    int num_layers; // numebr of hidden layers in neural network
     int *layers_sizes; // array where each entry is the # of nodes in that layer
     double **neuron_activations;//neuron activations of each layer
 
     // weight between a node of the current layer and a node of previous layer, (it start from first hidden layer)
     // [layer][hideen_layers_size[layer]*hideen_layers_size[layer-1]]
-    double **weights; //note input lauer doesnt have weights, so weights[0] gives segmentation fault
-    double **biases;// note: input layer doesn0t have bias , do biases[0] gives segmentation fault
+    double **weights; //note input lauer doesnt have weights
+    double **biases;// note: input layer doesn0t have bias
 } MLP;
+
 
     // double** samples; //array of pointers (sample #) to array of feautres
     // double** targets; //array of pointers (sample #) to array of targets

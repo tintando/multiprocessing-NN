@@ -238,6 +238,7 @@ double backpropagation(MLP *mlp, double **inputs, double **targets, int current_
             }
         }
     }
+    
     // batch computed
     // Apply mean gradients to update weights and biases
     for (int current_layer = 0; current_layer <= mlp->num_hidden_layers; current_layer++) {
@@ -283,7 +284,7 @@ double backpropagation(MLP *mlp, double **inputs, double **targets, int current_
    Repeatedly applies feedforward and backpropagation on the dataset for a specified number of epochs,
    adjusting the weights to minimize the loss.*/
 void trainMLP(MLP *mlp, double **dataset, double **targets, int num_samples, int num_epochs, double learning_rate, int batch_size, ActivationFunction act, ActivationFunctionDerivative dact) {
-    for (int epoch = 0; epoch < num_epochs; epoch++) {
+    //for (int epoch = 0; epoch < num_epochs; epoch++) {
         //An epoch is a single pass through the entire dataset.
         //shuffleDataset(&dataset, &targets, num_samples);
         double total_loss = 0.0; //accomulator of loss over a single epoch
@@ -304,8 +305,8 @@ void trainMLP(MLP *mlp, double **dataset, double **targets, int num_samples, int
         }
         //by printing the average loss of this epoch we have an idea of how good the learning is going odd
         total_loss /= (num_samples/batch_size); 
-        printf("Epoch %d, Loss: %f\n", epoch + 1, total_loss);
-    }
+        //printf("Epoch %d, Loss: %f\n", epoch + 1, total_loss);
+    //}
 }
 
 double evaluateMLP(MLP *mlp, double **test_data, double **test_targets, int test_size, ActivationFunction act) {
