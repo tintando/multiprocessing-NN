@@ -130,7 +130,8 @@ void *thread_action(void *voidArgs){
     //if (args->thread_id==3) printf("Hello world from thread %ld\n", args->thread_id);
     double batch_loss = 0;
     //if it is last thread, it has less samples, or 0 (in case it is divisible)
-    int my_number_of_samples = (args->thread_id != NUM_THREADS-1) ? args->batch_size/NUM_THREADS : args->batch_size % NUM_THREADS;
+    int my_number_of_samples = (args->thread_id != NUM_THREADS-1) ? 
+                args->batch_size/NUM_THREADS : args->batch_size/NUM_THREADS + args->batch_size % NUM_THREADS;
 
     if (my_number_of_samples==0){
         printf("[%d] I don't have samples!!!, i will stop here.\n", args->thread_id);
@@ -140,9 +141,9 @@ void *thread_action(void *voidArgs){
     int my_start_index = args->thread_id * my_number_of_samples;
     int my_end_index = my_start_index + my_number_of_samples;
     //if (args->thread_id==2) printf("for (int sample_i = %d; sample_i<%d; sample_i++) {\n", my_start_index, my_end_index);
+    
     //iterate trough my samples
     for (int sample_i = my_start_index; sample_i<my_end_index; sample_i++) {
-
         //set sample_i features as neuron activation of first layer
         for (int j = 0; j < args->mlp->layers_sizes[0]; j++) {
             args->my_neuron_activations[0][j] = args->dataset->samples[sample_i][j];
@@ -164,7 +165,7 @@ void *thread_action(void *voidArgs){
         //printf("\n[%d]sample %d after feedforward\n",args->thread_id, sample_i);
         feedforward_thread(args);
         //printThreadArgs(args);
-        //backpropagation_thread(args)
+        //backpropagation_thread(args);
 
         // for (int i = 0; i < args->mlp->output_size; i++) {// for each output node
         //         // error = result - expected
@@ -280,6 +281,7 @@ void trainMLP(Data train_dataset, MLP* mlp, int num_epochs, int batch_size, int 
 
         // iterate through the dataset in batches
         //train_dataset.size = 5; //tmp (specify the number of sample to try)
+        int n_samples = 0;
 for (int batch_start_index = 0; batch_start_index < train_dataset.size; batch_start_index += batch_size) { 
             //printData(train_dataset);
             //the size of the ith batch.
@@ -298,6 +300,7 @@ for (int batch_start_index = 0; batch_start_index < train_dataset.size; batch_st
                 
                 thread_args[thread_id]->batch_size = current_batch_size;
                 thread_args[thread_id]->batch_start_index = batch_start_index;
+
                 //starting the threads
                 //printf("creating thread %d\n", thread_id);
                 pthread_create(&threads[thread_id], NULL,  thread_action, (void *)thread_args[thread_id]);
@@ -308,6 +311,7 @@ for (int batch_start_index = 0; batch_start_index < train_dataset.size; batch_st
             }
 
         }
+
      //}
     
  }
