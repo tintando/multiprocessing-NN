@@ -12,7 +12,7 @@
 #define next_layer current_layer+1
 #define N_FEATURES 8
 #define N_LABELS 1
-#define NUM_THREADS 1
+#define NUM_THREADS 4
 
 
 typedef struct Thread_args{
@@ -33,14 +33,16 @@ typedef struct Thread_args{
 }Thread_args;
 
 void printThreadArgs(const Thread_args* args) {
-    printf("Thread ID: %d\n", args->thread_id);
-    printf("MLP Pointer: %p\n", (void*)args->mlp);
-    //printMLP(args->mlp); // Print details of the MLP structure
+    // Since thread_id is part of the args, we use it directly in the print statements.
+    //if (args->thread_id!=2) return;
+    printf("[%d] Thread ID: %d\n", args->thread_id, args->thread_id);
+    printf("[%d] MLP Pointer: %p\n", args->thread_id, (void*)args->mlp);
+    //printMLP(args->mlp, args->thread_id); // Adjust printMLP to accept thread_id if you want to integrate it similarly.
 
     // Print neuron activations
-    printf("Neuron Activations:\n");
+    printf("[%d] Neuron Activations:\n", args->thread_id);
     for (int i = 0; i < args->mlp->num_layers; i++) {
-        printf("Layer %d: ", i);
+        printf("[%d] Layer %d: ", args->thread_id, i);
         for (int j = 0; j < args->mlp->layers_sizes[i]; j++) {
             printf("%lf ", args->my_neuron_activations[i][j]);
         }
@@ -48,9 +50,9 @@ void printThreadArgs(const Thread_args* args) {
     }
 
     // Print delta values
-    printf("Delta Values:\n");
+    printf("[%d] Delta Values:\n", args->thread_id);
     for (int i = 1; i < args->mlp->num_layers; i++) { // Starting from 1 as input layer doesn't have delta
-        printf("Layer %d: ", i);
+        printf("[%d] Layer %d: ", args->thread_id, i);
         for (int j = 0; j < args->mlp->layers_sizes[i]; j++) {
             printf("%lf ", args->my_delta[i][j]);
         }
@@ -58,9 +60,9 @@ void printThreadArgs(const Thread_args* args) {
     }
 
     // Print gradient accumulators for weights
-    printf("Gradient Weights Accumulators:\n");
+    printf("[%d] Gradient Weights Accumulators:\n", args->thread_id);
     for (int i = 1; i < args->mlp->num_layers; i++) {
-        printf("Layer %d: ", i);
+        printf("[%d] Layer %d: ", args->thread_id, i);
         for (int j = 0; j < args->mlp->layers_sizes[i] * args->mlp->layers_sizes[i-1]; j++) {
             printf("%lf ", args->my_grad_weights_accumulators[i][j]);
         }
@@ -68,25 +70,25 @@ void printThreadArgs(const Thread_args* args) {
     }
 
     // Print gradient accumulators for biases
-    printf("Gradient Biases Accumulators:\n");
+    printf("[%d] Gradient Biases Accumulators:\n", args->thread_id);
     for (int i = 1; i < args->mlp->num_layers; i++) {
-        printf("Layer %d: ", i);
+        printf("[%d] Layer %d: ", args->thread_id, i);
         for (int j = 0; j < args->mlp->layers_sizes[i]; j++) {
             printf("%lf ", args->my_grad_biases_accumulator[i][j]);
         }
         printf("\n");
     }
 
-    printf("Batch Start Index: %d\n", args->batch_start_index);
-    printf("Batch Size: %d\n", args->batch_size);
-    printf("Dataset Pointer: %p\n", (void*)args->dataset);
-    printf("Learning Rate: %lf\n", args->learning_rate);
-    printf("Number of Threads: %d\n", args->num_threads);
-    printf("Loss: %lf\n", args->my_loss);
+    printf("[%d] Batch Start Index: %d\n", args->thread_id, args->batch_start_index);
+    printf("[%d] Batch Size: %d\n", args->thread_id, args->batch_size);
+    printf("[%d] Dataset Pointer: %p\n", args->thread_id, (void*)args->dataset);
+    printf("[%d] Learning Rate: %lf\n", args->thread_id, args->learning_rate);
+    printf("[%d] Number of Threads: %d\n", args->thread_id, args->num_threads);
+    printf("[%d] Loss: %lf\n", args->thread_id, args->my_loss);
 
     // Assuming act and dact are function pointers or similar identifiers
-    printf("Activation Function: %p\n", (void*)args->act);
-    printf("Derivative of Activation Function: %p\n", (void*)args->dact);
+    printf("[%d] Activation Function: %p\n", args->thread_id, (void*)args->act);
+    printf("[%d] Derivative of Activation Function: %p\n", args->thread_id, (void*)args->dact);
 }
 
 
@@ -108,16 +110,9 @@ void matrixMultiplyAndAddBias(double *output, double *input,
 }
 
 void feedforward_thread(Thread_args* args){
-    // gives input
-   MLP *mlp = args->mlp;
-    
-    for (int j = 0; j < mlp->layers_sizes[0]; j++) {
-        // Initialize the activation of the input layer neurons with the input values.
-        args->my_neuron_activations[0][j] = args->dataset->samples[0][j];
-    }
 
-    // compute neuron activation for the hidden layers
-    for (int i = 1; i < mlp->num_layers; i++) {
+    // compute neuron activation for the hidden layers and output layer
+    for (int i = 1; i < args->mlp->num_layers; i++) {
          // for each hidden layer
         matrixMultiplyAndAddBias(args->my_neuron_activations[i], args->my_neuron_activations[i-1], args->mlp->weights[i],
                                 args->mlp->biases[i], args->mlp->layers_sizes[i-1], args->mlp->layers_sizes[i]);
@@ -130,23 +125,45 @@ void feedforward_thread(Thread_args* args){
 
 
 void *thread_action(void *voidArgs){
-
+    
     Thread_args *args = (Thread_args *)voidArgs;//casting the correct type to args
-    printf("Hello world from thread %ld\n", args->thread_id);
+    //if (args->thread_id==3) printf("Hello world from thread %ld\n", args->thread_id);
     double batch_loss = 0;
-
-    //if it is last thread, it has less samples
+    //if it is last thread, it has less samples, or 0 (in case it is divisible)
     int my_number_of_samples = (args->thread_id != NUM_THREADS-1) ? args->batch_size/NUM_THREADS : args->batch_size % NUM_THREADS;
+
+    if (my_number_of_samples==0){
+        printf("[%d] I don't have samples!!!, i will stop here.\n", args->thread_id);
+        return NULL;
+    }
+    //int my_number_of_samples = args->batch_size/NUM_THREADS; //with one thread
     int my_start_index = args->thread_id * my_number_of_samples;
     int my_end_index = my_start_index + my_number_of_samples;
-
+    //if (args->thread_id==2) printf("for (int sample_i = %d; sample_i<%d; sample_i++) {\n", my_start_index, my_end_index);
     //iterate trough my samples
-    printThreadArgs(args);
-    for (int sample= 0; sample<my_end_index-my_start_index+1; sample++) {
-        printThreadArgs(args);
-        double sample_loss = 0;
-        feedforward_thread(args);
+    for (int sample_i = my_start_index; sample_i<my_end_index; sample_i++) {
 
+        //set sample_i features as neuron activation of first layer
+        for (int j = 0; j < args->mlp->layers_sizes[0]; j++) {
+            args->my_neuron_activations[0][j] = args->dataset->samples[sample_i][j];
+        }
+
+//uncomment this if you want to see Input layer and all other layers at beginning of feed forward
+// //set sample_i features as neuron activation of first layer
+// for (int j = 0; j < args->mlp->layers_sizes[0]; j++) {
+//     args->my_neuron_activations[0][j] = args->dataset->samples[sample_i][j];
+// }
+// for (int i = 1; i < args->mlp->num_layers; i++) {
+//     for (int j = 0; j < args->mlp->layers_sizes[i]; j++) {
+//         args->my_neuron_activations[i][j] = 0.0;// initialize
+//     }
+// }
+        //printf("\n\nsample %d before feedforward\n", sample_i);
+        //printThreadArgs(args);
+        double sample_loss = 0;
+        //printf("\n[%d]sample %d after feedforward\n",args->thread_id, sample_i);
+        feedforward_thread(args);
+        //printThreadArgs(args);
         //backpropagation_thread(args)
 
         // for (int i = 0; i < args->mlp->output_size; i++) {// for each output node
@@ -159,7 +176,7 @@ void *thread_action(void *voidArgs){
         // }
         // batch_loss+=sample_loss;
     }
-    printThreadArgs(args);
+    
     return NULL;
 }
 
@@ -188,9 +205,9 @@ Thread_args* createThreadArgs(MLP *mlp, long thread_id){
     //args for the specific thread
     Thread_args* args = (Thread_args*) malloc(sizeof(Thread_args));
     if (!args) return NULL;
-    printf("initializing args for thread %d\n", thread_id);
+    //printf("initializing args for thread %d\n", thread_id);
     args->thread_id = thread_id;
-    printf("thread id is %ld but it is supposed to be %ld\n", thread_id, args->thread_id);
+    //printf("thread id is %ld but it is supposed to be %ld\n", thread_id, args->thread_id);
     args->mlp = mlp;
 
     //initializing the array of pointers
@@ -262,7 +279,7 @@ void trainMLP(Data train_dataset, MLP* mlp, int num_epochs, int batch_size, int 
         double epoch_loss = 0.0; //accomulator of loss over a single epoch
 
         // iterate through the dataset in batches
-        train_dataset.size = 5; //tmp
+        //train_dataset.size = 5; //tmp (specify the number of sample to try)
 for (int batch_start_index = 0; batch_start_index < train_dataset.size; batch_start_index += batch_size) { 
             //printData(train_dataset);
             //the size of the ith batch.
@@ -282,7 +299,7 @@ for (int batch_start_index = 0; batch_start_index < train_dataset.size; batch_st
                 thread_args[thread_id]->batch_size = current_batch_size;
                 thread_args[thread_id]->batch_start_index = batch_start_index;
                 //starting the threads
-                printf("creating thread %d\n", thread_id);
+                //printf("creating thread %d\n", thread_id);
                 pthread_create(&threads[thread_id], NULL,  thread_action, (void *)thread_args[thread_id]);
             }
 

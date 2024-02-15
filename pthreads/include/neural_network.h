@@ -37,13 +37,18 @@ typedef struct MLP {
     double **biases;// note: input layer doesn0t have bias , do biases[0] gives segmentation fault
 } MLP;
 
-// Data structure
+    // double** samples; //array of pointers (sample #) to array of feautres
+    // double** targets; //array of pointers (sample #) to array of targets
+    // int size; // Number of samples
 typedef struct Data {
-    double** samples;
-    double** targets;
+    double** samples; //array of pointers (sample #) to array of feautres
+    double** targets; //array of pointers (sample #) to array of targets
     int size; // Number of samples
 } Data;
-
+ 
+    // Data train;
+    // Data test;
+    // Data validation;
 typedef struct Dataset {
     Data train;
     Data test;
