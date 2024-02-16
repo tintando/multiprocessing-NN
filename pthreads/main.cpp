@@ -11,7 +11,7 @@
 
 #define N_FEATURES 8
 #define N_LABELS 1
-#define NUM_THREADS 1
+#define NUM_THREADS 7
 
 void matrixMultiplyAndAddBias(double *output, double *input, 
                               double *weights, double *biases, 
@@ -114,25 +114,25 @@ void backpropagation_thread(Thread_args* args, int sample_i){
 
     }
     //printf("[%d] Backpropagation finished for sample %d\n",args->thread_id, sample_i);
-    printf("\nGradient Weights Accumulators:\n");
-    for (int i = 1; i < args->mlp->num_layers; i++) {
-        for (int j = 0; j < args->mlp->layers_sizes[i]; j++) {
-            for(int k = 0; k < args->mlp->layers_sizes[i-1]; k++){
-                printf("neuron %d of layer %d to neuron %d of layer %d: %lf ",k, i-1, j, i, args->my_grad_weights_accumulators[i][j * args->mlp->layers_sizes[i-1] + k]);
-                printf("\n");
-            }
-        }
-        printf("\n");
-    }
-    // Print gradient accumulators for biases
-    printf("Gradient Biases Accumulators:\n");
-    for (int i = 1; i < args->mlp->num_layers; i++) {
-        printf("Layer %d: ", i);
-        for (int j = 0; j < args->mlp->layers_sizes[i]; j++) {
-            printf("%lf ", args->my_grad_biases_accumulator[i][j]);
-        }
-        printf("\n");
-    }
+    // printf("\nGradient Weights Accumulators:\n");
+    // for (int i = 1; i < args->mlp->num_layers; i++) {
+    //     for (int j = 0; j < args->mlp->layers_sizes[i]; j++) {
+    //         for(int k = 0; k < args->mlp->layers_sizes[i-1]; k++){
+    //             printf("neuron %d of layer %d to neuron %d of layer %d: %lf ",k, i-1, j, i, args->my_grad_weights_accumulators[i][j * args->mlp->layers_sizes[i-1] + k]);
+    //             printf("\n");
+    //         }
+    //     }
+    //     printf("\n");
+    // }
+    // // Print gradient accumulators for biases
+    // printf("Gradient Biases Accumulators:\n");
+    // for (int i = 1; i < args->mlp->num_layers; i++) {
+    //     printf("Layer %d: ", i);
+    //     for (int j = 0; j < args->mlp->layers_sizes[i]; j++) {
+    //         printf("%lf ", args->my_grad_biases_accumulator[i][j]);
+    //     }
+    //     printf("\n");
+    // }
 }
 
 
@@ -150,6 +150,7 @@ void *thread_action(void *voidArgs){
     //int my_number_of_samples = args->batch_size/NUM_THREADS; //with one thread
     int my_start_index = args->batch_start_index + args->thread_id * my_number_of_samples;
     int my_end_index = my_start_index + my_number_of_samples;
+
     //if (args->thread_id==2) printf("for (int sample_i = %d; sample_i<%d; sample_i++) {\n", my_start_index, my_end_index);
     
     //iterate trough my samples
@@ -169,7 +170,7 @@ void *thread_action(void *voidArgs){
 //         args->my_neuron_activations[i][j] = 0.0;// initialize
 //     }
 // }
-        printf("\n\n[%d] sample %d/%d  starting feedforward and backprop\n",args->thread_id, sample_i, my_end_index-1);
+        //printf("\n\n[%d] sample %d/%d  starting feedforward and backprop\n",args->thread_id, sample_i, my_end_index-1);
         double sample_loss = 0;
         //printf("\n[%d]sample %d after feedforward\n",args->thread_id, sample_i);
         feedforward_thread(args);
@@ -178,7 +179,7 @@ void *thread_action(void *voidArgs){
         // printThreadArgs(args);
         backpropagation_thread(args, sample_i);
         //printf("\n\n%dsample %d/%d  before feedforward\n",args->thread_id, sample_i, my_end_index-1);
-        printf("[%d] sample %d/%d  finished feedforward and backprop\n",args->thread_id, sample_i, my_end_index-1);
+        //printf("[%d] sample %d/%d  finished feedforward and backprop\n",args->thread_id, sample_i, my_end_index-1);
 
         
         // batch_loss+=sample_loss;
@@ -217,13 +218,13 @@ void trainMLP(Data train_dataset, MLP* mlp, int num_epochs, int batch_size, int 
 
     //for each epoch
 for (int epoch = 0; epoch < num_epochs; epoch++) {
-        //printf("epoch %d: \n", epoch);
+        printf("epoch %d: \n", epoch);
         double epoch_loss = 0.0; //accomulator of loss over a single epoch
 
         // iterate through the dataset in batches
-        train_dataset.size = 2; //tmp (specify the number of sample to try)
+        //train_dataset.size = 2; //tmp (specify the number of sample to try)
 
-    for (int batch_start_index = 0; batch_start_index < train_dataset.size; batch_start_index += batch_size) { 
+    for (int batch_start_index = 0; batch_start_index < train_dataset.size - batch_size; batch_start_index += batch_size) { 
         //printData(train_dataset);
         //the size of the ith batch.
         int current_batch_size = (batch_start_index + batch_size > train_dataset.size) ? (train_dataset.size - batch_start_index) : batch_size;
@@ -276,25 +277,25 @@ for (int epoch = 0; epoch < num_epochs; epoch++) {
         }
         // printf("accomulators computed")
 
-        printf("\nBATCH Gradient Weights Accumulators:\n");
-        for (int i = 1; i < mlp->num_layers; i++) {
-            for (int j = 0; j < mlp->layers_sizes[i]; j++) {
-                for(int k = 0; k < mlp->layers_sizes[i-1]; k++){
-                    printf("neuron %d of layer %d to neuron %d of layer %d: %lf ",k, i-1, j, i, grad_weights_accumulators[i][j * mlp->layers_sizes[i-1] + k]);
-                    printf("\n");
-                }
-            }
-            printf("\n");
-        }
-        // Print gradient accumulators for biases
-        printf("BATCH Gradient Biases Accumulators:\n");
-        for (int i = 1; i < mlp->num_layers; i++) {
-            printf("Layer %d: ", i);
-            for (int j = 0; j < mlp->layers_sizes[i]; j++) {
-                printf("%lf ", grad_biases_accumulator[i][j]);
-            }
-            printf("\n");
-        }
+        // printf("\nBATCH Gradient Weights Accumulators:\n");
+        // for (int i = 1; i < mlp->num_layers; i++) {
+        //     for (int j = 0; j < mlp->layers_sizes[i]; j++) {
+        //         for(int k = 0; k < mlp->layers_sizes[i-1]; k++){
+        //             printf("neuron %d of layer %d to neuron %d of layer %d: %lf ",k, i-1, j, i, grad_weights_accumulators[i][j * mlp->layers_sizes[i-1] + k]);
+        //             printf("\n");
+        //         }
+        //     }
+        //     printf("\n");
+        // }
+        // // Print gradient accumulators for biases
+        // printf("BATCH Gradient Biases Accumulators:\n");
+        // for (int i = 1; i < mlp->num_layers; i++) {
+        //     printf("Layer %d: ", i);
+        //     for (int j = 0; j < mlp->layers_sizes[i]; j++) {
+        //         printf("%lf ", grad_biases_accumulator[i][j]);
+        //     }
+        //     printf("\n");
+        // }
 
         // Apply mean gradients to update weights and biases
         for (int i = 1; i < mlp->num_layers; i++) {
@@ -352,7 +353,7 @@ int main(int argc, char *argv[]){
     //printMLP(mlp);
     // Define learning parameters
     double learning_rate = 0.01;
-    int num_epochs = 1;
+    int num_epochs = 100;
     int batch_size = 128; // Adjust based on your dataset size and memory constraints
 
     // Train MLP

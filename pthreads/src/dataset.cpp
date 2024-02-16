@@ -186,7 +186,7 @@ void shuffleDataset(double ***dataset, double ***targets, int n_samples) {
 // Splits the dataset into train, validation, and test sets
 Dataset splitDataset(int n_samples, double*** dataset, double*** targets){
 
-    int train_size = (int)(n_samples*80/100), test_size = n_samples - train_size;
+    int train_size = (int)(n_samples*100/100), test_size = n_samples - train_size;
     double **train_data = (double**) malloc(train_size * sizeof(double*));
     double **train_targets = (double**) malloc(train_size * sizeof(double*));
     double **test_data = (double**) malloc(test_size * sizeof(double*));
