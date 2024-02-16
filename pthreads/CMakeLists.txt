@@ -14,8 +14,10 @@ find_package(Threads REQUIRED)
 # Add your source files here
 set(SOURCES
     main.cpp
-    src/data_loading.cpp
-    src/neural_network.cpp
+    src/threads.cpp
+    src/activation_functions.cpp
+    src/mlp.cpp
+    src/dataset.cpp
 )
 
 add_executable(multithread ${SOURCES})

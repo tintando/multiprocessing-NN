@@ -1,97 +1,96 @@
+void printMLP(const MLP *mlp, long thread_id) {
+    printf("MLP Structure:\n");
+    printf("Number of Layers: %d\n", mlp->num_layers);
 
-Thread_args* createThreadArgs(MLP *mlp, long thread_id){
-    //args for the specific thread
-    Thread_args* args = (Thread_args*) malloc(sizeof(Thread_args));
-    if (!args) return NULL;
-    printf("initializing args for thread %d\n", thread_id);
-    args->thread_id = thread_id;
-    printf("thread id is %ld but it is supposed to be %ld\n", thread_id, args->thread_id);
-}
-
-void trainMLP(Data train_dataset, MLP* mlp, int num_epochs, int batch_size, int learning_rate){
-    
-    //initialize thread data structures
-    pthread_t threads[NUM_THREADS]; //thread identifier
-    Thread_args* thread_args[NUM_THREADS]; // array of thread data, one specific for thread
-
-    //Initializes the variables that are persistent in the epochs or data stractures that keep the same shape
-    for(long thread_id=0; thread_id < NUM_THREADS; thread_id++){
-        thread_args[thread_id] = createThreadArgs(mlp,thread_id); 
-        thread_args[thread_id]->dataset = &train_dataset;
-        //printThreadArgs(thread_args[thread]);
-        pthread_create(&threads[thread_id], NULL,  thread_action, (void *)&thread_args[thread_id]);
-        pthread_join(threads[thread_id], NULL);
+    // Print sizes of each layer
+    for (int i = 0; i < mlp->num_layers; i++) {
+        printf("Layer %d size: %d\n", i, mlp->layers_sizes[i]);
     }
 
-void *thread_action(void *voidArgs){
+    // Print neuron activations
+    for (int i = 0; i < mlp->num_layers; i++) {
+        printf("Layer %d activations: ", i);
+        for (int j = 0; j < mlp->layers_sizes[i]; j++) {
+            printf("%lf ", mlp->neuron_activations[i][j]);
+        }
+        printf("\n");
+    }
 
-    Thread_args *args = (Thread_args *)voidArgs;
-    printf("Hello world from thread %ld\n", args->thread_id);
+    // Print weights
+    for (int i = 1; i < mlp->num_layers; i++) { // Start from 1 since weights are between layers
+        printf("Weights to Layer %d: \n", i);
+        for (int j = 0; j < mlp->layers_sizes[i]; j++) {
+            for (int k = 0; k < mlp->layers_sizes[i-1]; k++) {
+                printf("W[%d][%d]: %lf ", j, k, mlp->weights[i][j * mlp->layers_sizes[i-1] + k]);
+            }
+            printf("\n");
+        }
+    }
+
+    // Print biases
+    for (int i = 1; i < mlp->num_layers; i++) {
+        printf("Layer %d biases: ", i);
+        for (int j = 0; j < mlp->layers_sizes[i]; j++) {
+            printf("%lf ", mlp->biases[i][j]);
+        }
+        printf("\n");
+    }
 }
 
-why do i get this big numbers and not the logical thread id??
+[2]sample 95 after feedforward
+[2] Thread ID: 2
+[2] MLP Pointer: 0x556940cf05e0
+[2] Neuron Activations:
+[2] Layer 0: 2.009600 36.000000 2.294016 1.066294 3469.000000 1.493328 37.799999 -122.260002 
+[2] Layer 1: 1883.719189 0.000000 0.000000 2287.908508 0.000000 
+[2] Layer 2: 1751.954548 0.000000 
+[2] Layer 3: 128.814129 
+[2] Delta Values:
+[2] Layer 1: 0.000000 0.000000 0.000000 0.000000 0.000000 
+[2] Layer 2: 0.000000 0.000000 
+[2] Layer 3: 0.000000 
+[2] Gradient Weights Accumulators:
+[2] Layer 1: 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 
+[2] Layer 2: 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 
+[2] Layer 3: 0.000000 0.000000 
+[2] Gradient Biases Accumulators:
+[2] Layer 1: 0.000000 0.000000 0.000000 0.000000 0.000000 
+[2] Layer 2: 0.000000 0.000000 
+[2] Layer 3: 0.000000 
+[2] Batch Start Index: 16384
+[2] Batch Size: 128
+[2] Dataset Pointer: 0x7ffed66bc4c0
+[2] Learning Rate: 0.000000
+[2] Number of Threads: 0
+[2] Loss: 0.000000
+[2] Activation Function: 0x556940b9a1b6
+[2] Derivative of Activation Function: 0x556940b9a1e5
 
-initializing args for thread 0
-thread id is 0 but it is supposed to be 0
-outside the thread: 0
-Hello world from thread 93846129476768
-initializing args for thread 1
-thread id is 1 but it is supposed to be 1
-outside the thread: 1
-Hello world from thread 93846134756384
-initializing args for thread 2
-thread id is 2 but it is supposed to be 2
-outside the thread: 2
-Hello world from thread 93846134757696
-initializing args for thread 3
-thread id is 3 but it is supposed to be 3
-outside the thread: 3
-Hello world from thread 93846134759008
-initializing args for thread 4
-thread id is 4 but it is supposed to be 4
-outside the thread: 4
-Hello world from thread 93846134760320
-initializing args for thread 5
-thread id is 5 but it is supposed to be 5
-outside the thread: 5
-Hello world from thread 93846134761632
-initializing args for thread 6
-thread id is 6 but it is supposed to be 6
-outside the thread: 6
-Hello world from thread 93846134762944
-initializing args for thread 7
-thread id is 7 but it is supposed to be 7
-outside the thread: 7
-Hello world from thread 93846134764256
-initializing args for thread 8
-thread id is 8 but it is supposed to be 8
-outside the thread: 8
-Hello world from thread 93846134765568
-initializing args for thread 9
-thread id is 9 but it is supposed to be 9
-outside the thread: 9
-Hello world from thread 93846134766880
-initializing args for thread 10
-thread id is 10 but it is supposed to be 10
-outside the thread: 10
-Hello world from thread 93846134768192
-initializing args for thread 11
-thread id is 11 but it is supposed to be 11
-outside the thread: 11
-Hello world from thread 93846134769504
-initializing args for thread 12
-thread id is 12 but it is supposed to be 12
-outside the thread: 12
-Hello world from thread 93846134770816
-initializing args for thread 13
-thread id is 13 but it is supposed to be 13
-outside the thread: 13
-Hello world from thread 93846134772128
-initializing args for thread 14
-thread id is 14 but it is supposed to be 14
-outside the thread: 14
-Hello world from thread 93846134773440
-initializing args for thread 15
-thread id is 15 but it is supposed to be 15
-outside the thread: 15
-Hello world from thread 93846134774752
+[2]sample 95 after feedforward
+[2] Thread ID: 2
+[2] MLP Pointer: 0x562d96b695e0
+[2] Neuron Activations:
+[2] Layer 0: 2.009600 36.000000 2.294016 1.066294 3469.000000 1.493328 37.799999 -122.260002 
+[2] Layer 1: 1883.719189 0.000000 0.000000 2287.908508 0.000000 
+[2] Layer 2: 1751.954548 0.000000 
+[2] Layer 3: 128.814129 
+[2] Delta Values:
+[2] Layer 1: 0.000000 0.000000 0.000000 0.000000 0.000000 
+[2] Layer 2: 0.000000 0.000000 
+[2] Layer 3: 0.000000 
+[2] Gradient Weights Accumulators:
+[2] Layer 1: 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 
+[2] Layer 2: 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 
+[2] Layer 3: 0.000000 0.000000 
+[2] Gradient Biases Accumulators:
+[2] Layer 1: 0.000000 0.000000 0.000000 0.000000 0.000000 
+[2] Layer 2: 0.000000 0.000000 
+[2] Layer 3: 0.000000 
+[2] Batch Start Index: 16384
+[2] Batch Size: 128
+[2] Dataset Pointer: 0x7ffcb46fe9b0
+[2] Learning Rate: 0.000000
+[2] Number of Threads: 0
+[2] Loss: 0.000000
+[2] Activation Function: 0x562d968a02ba
+[2] Derivative of Activation Function: 0x562d968a02e9
