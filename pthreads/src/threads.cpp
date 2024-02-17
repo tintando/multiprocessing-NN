@@ -129,8 +129,8 @@ Thread_args* createThreadArgs(MLP *mlp, long thread_id){
     args->my_grad_biases_accumulator = (double **)malloc((mlp->num_layers) * sizeof(double *));
     
     args->my_batch_loss = 0;
-    args->act = relu;
-    args->dact = drelu;
+    args->act = tanh;
+    args->dact = dtanh;
 
     //loop trough hidden layers and initialize persistent data structures
     for(int i = 0; i < mlp->num_layers; i++){
@@ -139,9 +139,9 @@ Thread_args* createThreadArgs(MLP *mlp, long thread_id){
         //each layer has activations
         args->my_neuron_activations[i] = (double *)calloc(mlp->layers_sizes[i], sizeof(double));
         //initialize and allocate the gradient weights accumulator for the current layer
-        printf("layer %d has %d neurons\n", i, mlp->layers_sizes[i]);
+        //printf("layer %d has %d neurons\n", i, mlp->layers_sizes[i]);
         if (i!=0){
-            printf("the weights between layer %d and layer %d are %d\n", i, i-1, mlp->layers_sizes[i] * mlp->layers_sizes[i-1]);
+            //printf("the weights between layer %d and layer %d are %d\n", i, i-1, mlp->layers_sizes[i] * mlp->layers_sizes[i-1]);
             args->my_grad_weights_accumulators[i] = (double *)calloc(mlp->layers_sizes[i] * mlp->layers_sizes[i-1], sizeof(double));
         }
         args->my_grad_biases_accumulator[i] = (double *)calloc(mlp->layers_sizes[i], sizeof(double));
