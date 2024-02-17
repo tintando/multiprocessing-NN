@@ -1,0 +1,96 @@
+void printMLP(const MLP *mlp, long thread_id) {
+    printf("MLP Structure:\n");
+    printf("Number of Layers: %d\n", mlp->num_layers);
+
+    // Print sizes of each layer
+    for (int i = 0; i < mlp->num_layers; i++) {
+        printf("Layer %d size: %d\n", i, mlp->layers_sizes[i]);
+    }
+
+    // Print neuron activations
+    for (int i = 0; i < mlp->num_layers; i++) {
+        printf("Layer %d activations: ", i);
+        for (int j = 0; j < mlp->layers_sizes[i]; j++) {
+            printf("%lf ", mlp->neuron_activations[i][j]);
+        }
+        printf("\n");
+    }
+
+    // Print weights
+    for (int i = 1; i < mlp->num_layers; i++) { // Start from 1 since weights are between layers
+        printf("Weights to Layer %d: \n", i);
+        for (int j = 0; j < mlp->layers_sizes[i]; j++) {
+            for (int k = 0; k < mlp->layers_sizes[i-1]; k++) {
+                printf("W[%d][%d]: %lf ", j, k, mlp->weights[i][j * mlp->layers_sizes[i-1] + k]);
+            }
+            printf("\n");
+        }
+    }
+
+    // Print biases
+    for (int i = 1; i < mlp->num_layers; i++) {
+        printf("Layer %d biases: ", i);
+        for (int j = 0; j < mlp->layers_sizes[i]; j++) {
+            printf("%lf ", mlp->biases[i][j]);
+        }
+        printf("\n");
+    }
+}
+
+[2]sample 95 after feedforward
+[2] Thread ID: 2
+[2] MLP Pointer: 0x556940cf05e0
+[2] Neuron Activations:
+[2] Layer 0: 2.009600 36.000000 2.294016 1.066294 3469.000000 1.493328 37.799999 -122.260002 
+[2] Layer 1: 1883.719189 0.000000 0.000000 2287.908508 0.000000 
+[2] Layer 2: 1751.954548 0.000000 
+[2] Layer 3: 128.814129 
+[2] Delta Values:
+[2] Layer 1: 0.000000 0.000000 0.000000 0.000000 0.000000 
+[2] Layer 2: 0.000000 0.000000 
+[2] Layer 3: 0.000000 
+[2] Gradient Weights Accumulators:
+[2] Layer 1: 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 
+[2] Layer 2: 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 
+[2] Layer 3: 0.000000 0.000000 
+[2] Gradient Biases Accumulators:
+[2] Layer 1: 0.000000 0.000000 0.000000 0.000000 0.000000 
+[2] Layer 2: 0.000000 0.000000 
+[2] Layer 3: 0.000000 
+[2] Batch Start Index: 16384
+[2] Batch Size: 128
+[2] Dataset Pointer: 0x7ffed66bc4c0
+[2] Learning Rate: 0.000000
+[2] Number of Threads: 0
+[2] Loss: 0.000000
+[2] Activation Function: 0x556940b9a1b6
+[2] Derivative of Activation Function: 0x556940b9a1e5
+
+[2]sample 95 after feedforward
+[2] Thread ID: 2
+[2] MLP Pointer: 0x562d96b695e0
+[2] Neuron Activations:
+[2] Layer 0: 2.009600 36.000000 2.294016 1.066294 3469.000000 1.493328 37.799999 -122.260002 
+[2] Layer 1: 1883.719189 0.000000 0.000000 2287.908508 0.000000 
+[2] Layer 2: 1751.954548 0.000000 
+[2] Layer 3: 128.814129 
+[2] Delta Values:
+[2] Layer 1: 0.000000 0.000000 0.000000 0.000000 0.000000 
+[2] Layer 2: 0.000000 0.000000 
+[2] Layer 3: 0.000000 
+[2] Gradient Weights Accumulators:
+[2] Layer 1: 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 
+[2] Layer 2: 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 0.000000 
+[2] Layer 3: 0.000000 0.000000 
+[2] Gradient Biases Accumulators:
+[2] Layer 1: 0.000000 0.000000 0.000000 0.000000 0.000000 
+[2] Layer 2: 0.000000 0.000000 
+[2] Layer 3: 0.000000 
+[2] Batch Start Index: 16384
+[2] Batch Size: 128
+[2] Dataset Pointer: 0x7ffcb46fe9b0
+[2] Learning Rate: 0.000000
+[2] Number of Threads: 0
+[2] Loss: 0.000000
+[2] Activation Function: 0x562d968a02ba
+[2] Derivative of Activation Function: 0x562d968a02e9

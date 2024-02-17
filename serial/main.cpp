@@ -304,7 +304,7 @@ void trainMLP(MLP *mlp, double **dataset, double **targets, int num_samples, int
         }
         //by printing the average loss of this epoch we have an idea of how good the learning is going odd
         total_loss /= (num_samples/batch_size); 
-        printf("Epoch %d, Loss: %f\n", epoch + 1, total_loss);
+        printf("Epoch %d, Loss: %f\n", epoch , total_loss);
     }
 }
 
@@ -481,7 +481,7 @@ void splitDataset(int *train_size, int *test_size, int *validation_size,
 
 int main(int argc, char *argv[]){
 
-    const char* filename = "/home/pavka/multiprocessing-NN/serial/datasets/california.csv";
+    const char* filename = "/home/lexyo/Documenti/Dev/Multicore/multiprocessing-NN/serial/datasets/california.csv";
     double **dataset = NULL, **targets = NULL;
     int n_samples = 0;
 
@@ -502,13 +502,13 @@ int main(int argc, char *argv[]){
     MLP *mlp = createMLP(input_size, output_size, num_hidden_layers, hidden_layers_size);
 
     // Define learning parameters
-    double learning_rate = 0.001;
-    int num_epochs = 500;
-    int batch_size = 64; // Adjust based on your dataset size and memory constraints
+    double learning_rate = 0.8;
+    int num_epochs = 100;
+    int batch_size = 1000; // Adjust based on your dataset size and memory constraints
     // Train MLP
     trainMLP(mlp, train_data, train_targets, train_size, num_epochs, learning_rate, batch_size, sigmoid, dsigmoid);
     double error = evaluateMLP(mlp,test_data,test_targets,test_size, sigmoid);
-    printf("error is %f\n",error);
+    //printf("error is %f\n",error);
 
     // Clean up
     for (int i = 0; i < n_samples; i++) {
