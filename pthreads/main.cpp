@@ -11,7 +11,7 @@
 
 #define N_FEATURES 8
 #define N_LABELS 1
-#define NUM_THREADS 7
+#define NUM_THREADS 3
 
 void matrixMultiplyAndAddBias(double *output, double *input, 
                               double *weights, double *biases, 
@@ -143,11 +143,11 @@ void *thread_action(void *voidArgs){
     Thread_args *args = (Thread_args *)voidArgs;//casting the correct type to args
     //if (args->thread_id==3) printf("Hello world from thread %ld\n", args->thread_id);
     double batch_loss = 0;
-    //if it is last thread, it has less samples, or 0 (in case it is divisible)
-    int my_number_of_samples = (args->thread_id != NUM_THREADS-1) ? 
-                args->batch_size/NUM_THREADS : args->batch_size/NUM_THREADS + args->batch_size % NUM_THREADS-1;
+    //if it is last thread, it might have less samples, (the same number if it is divisible)
+    int my_number_of_samples = (args->thread_id == NUM_THREADS-1) ? args->batch_size/NUM_THREADS - args->batch_size%NUM_THREADS : args->batch_size/NUM_THREADS;
 
     //int my_number_of_samples = args->batch_size/NUM_THREADS; //with one thread
+    printf("[%d] i have %d samples, in particular from %d to %d, batch size = %d --- batch start index = %d \n", args->thread_id, my_number_of_samples, args->batch_start_index + args->thread_id * my_number_of_samples, args->batch_start_index + args->thread_id * my_number_of_samples + my_number_of_samples, args->batch_size, args->batch_start_index);
     int my_start_index = args->batch_start_index + args->thread_id * my_number_of_samples;
     int my_end_index = my_start_index + my_number_of_samples;
 
@@ -216,6 +216,8 @@ void trainMLP(Data train_dataset, MLP* mlp, int num_epochs, int batch_size, int 
         // pthread_join(threads[thread_id], NULL);
     }
 
+    int current_batch_size;
+
     //for each epoch
 for (int epoch = 0; epoch < num_epochs; epoch++) {
         printf("epoch %d: \n", epoch);
@@ -224,19 +226,26 @@ for (int epoch = 0; epoch < num_epochs; epoch++) {
         // iterate through the dataset in batches
         //train_dataset.size = 2; //tmp (specify the number of sample to try)
 
-    for (int batch_start_index = 0; batch_start_index < train_dataset.size - batch_size; batch_start_index += batch_size) { 
+    for (int batch_start_index = 0; batch_start_index < train_dataset.size; batch_start_index += batch_size) { 
         //printData(train_dataset);
         //the size of the ith batch.
-        int current_batch_size = (batch_start_index + batch_size > train_dataset.size) ? (train_dataset.size - batch_start_index) : batch_size;
+        if (batch_start_index + batch_size > train_dataset.size){
+            current_batch_size = train_dataset.size - batch_start_index;
+            printf("batch start: %d, batch end(in theory) = %d, SPECIAL size of this batch: %d --- \n", batch_start_index, batch_start_index + batch_size, current_batch_size);
+
+        }
+        else{
+            current_batch_size = batch_size;
+            printf("batch start: %d, batch end = %d, normal size of this batch: %d\n", batch_start_index, batch_start_index + batch_size, current_batch_size);
+
+        }
+        //int current_batch_size = (batch_start_index + batch_size > train_dataset.size) ? (batch_start_index + batch_size - train_dataset.size) : batch_size;
         // double **batch_inputs = (double **)malloc(current_batch_size * sizeof(double *));// the inputs for this batch
         // double **batch_targets = (double **)malloc(current_batch_size * sizeof(double *));// the labels for this batch
-
         // for (int j = 0; j < current_batch_size; j++) {
         //         batch_inputs[j] = dataset[i + j];
         //         batch_targets[j] = targets[i + j];
         //     }
-
-
         //initialize accumulators to 0 
         for (int i = 1; i<mlp->num_layers; i++){
                 grad_weights_accumulators[i] = (double *)calloc(mlp->layers_sizes[i] * mlp->layers_sizes[i-1], sizeof(double));
@@ -353,7 +362,7 @@ int main(int argc, char *argv[]){
     //printMLP(mlp);
     // Define learning parameters
     double learning_rate = 0.01;
-    int num_epochs = 100;
+    int num_epochs = 1000;
     int batch_size = 128; // Adjust based on your dataset size and memory constraints
 
     // Train MLP
