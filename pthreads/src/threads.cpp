@@ -129,8 +129,8 @@ Thread_args* createThreadArgs(MLP *mlp, long thread_id){
     args->my_grad_biases_accumulator = (double **)malloc((mlp->num_layers) * sizeof(double *));
     
     args->my_batch_loss = 0;
-    args->act = tanh;
-    args->dact = dtanh;
+    args->act = sigmoid;
+    args->dact = dsigmoid;
 
     //loop trough hidden layers and initialize persistent data structures
     for(int i = 0; i < mlp->num_layers; i++){
