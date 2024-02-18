@@ -207,7 +207,7 @@ void *thread_action_train(void *voidArgs){
     return NULL;
 }
 
-void trainMLP(Data train_dataset, MLP* mlp, int num_epochs, int batch_size, int learning_rate){
+void trainMLP(Data train_dataset, MLP* mlp, int num_epochs, int batch_size, double learning_rate){
     
     //initialize thread data structures
     pthread_t threads[NUM_THREADS]; //thread identifier
@@ -234,7 +234,7 @@ void trainMLP(Data train_dataset, MLP* mlp, int num_epochs, int batch_size, int 
     int current_batch_size;
     
     //double batch_loss;
-
+    //train_dataset.size = 2; //tmp (specify the number of sample to try)
     //for each epoch
     for (int epoch = 0; epoch < num_epochs; epoch++) {
             shuffleDataset(&(train_dataset.samples), &(train_dataset.targets), train_dataset.size);
@@ -242,7 +242,6 @@ void trainMLP(Data train_dataset, MLP* mlp, int num_epochs, int batch_size, int 
             double epoch_loss = 0.0; //accomulator of loss over a single epoch
 
             // iterate through the dataset in batches
-            //train_dataset.size = 2; //tmp (specify the number of sample to try)
         
         for (int batch_start_index = 0; batch_start_index < train_dataset.size; batch_start_index += batch_size) { 
             //printData(train_dataset);
@@ -304,14 +303,16 @@ void trainMLP(Data train_dataset, MLP* mlp, int num_epochs, int batch_size, int 
                     // Calculate mean gradient for biases and update
                     // printf("grad_biases_accumulator[%d][%d] = %f\n", i, j, grad_biases_accumulator[i][j]/current_batch_size);
                     // printf("mlp->biases[%d][%d] = %f\n", i, j, mlp->biases[i][j]);
-                    mlp->biases[i][j] -= learning_rate * (grad_biases_accumulator[i][j] / current_batch_size);
+                    mlp->biases[i][j] += learning_rate * (grad_biases_accumulator[i][j] / current_batch_size);
                     // printf("mlp->biases[%d][%d] = %f\n", i, j, mlp->biases[i][j]);
                     for (int k = 0; k < mlp->layers_sizes[i-1]; k++) {
                         //calcuate mean gradient for weights and update
                         // printf("grad_weights_accumulators[%d][%d] = %f\n", i, j * mlp->layers_sizes[i-1] + k, grad_weights_accumulators[i][j * mlp->layers_sizes[i-1] + k]/batch_size);
                         // printf("mlp->weights[%d][%d] = %f\n", i, j * mlp->layers_sizes[i-1] + k, mlp->weights[i][j * mlp->layers_sizes[i-1] + k]);
-                        mlp->weights[i][j * mlp->layers_sizes[i-1] + k] -= learning_rate * (grad_weights_accumulators[i][j * mlp->layers_sizes[i-1] + k] / current_batch_size);
+                        mlp->weights[i][j * mlp->layers_sizes[i-1] + k] += learning_rate * (grad_weights_accumulators[i][j * mlp->layers_sizes[i-1] + k] / current_batch_size);
                         // printf("mlp->weights[%d][%d] = %f\n", i, j * mlp->layers_sizes[i-1] + k, mlp->weights[i][j * mlp->layers_sizes[i-1] + k]);
+                        // print learning rate, grad weight accumulator, current batch size and learning_rate * (grad_weights_accumulators[i][j * mlp->layers_sizes[i-1] + k] / current_batch_size
+                        //printf("learning rate = %f, grad weight accumulator = %f, current batch size = %d, learning_rate * (grad_weights_accumulators[i][j * mlp->layers_sizes[i-1] + k] / current_batch_size) = %f\n", learning_rate, grad_weights_accumulators[i][j * mlp->layers_sizes[i-1] + k], current_batch_size, learning_rate * (grad_weights_accumulators[i][j * mlp->layers_sizes[i-1] + k] / current_batch_size));
                     }
 
                 }
@@ -427,9 +428,9 @@ int main(int argc, char *argv[]){
     int layers_size[] = {N_FEATURES, 5, 2, N_LABELS}; 
     MLP *mlp = createMLP(num_layers, layers_size);
     if (!mlp) return 1;
-    //printMLP(mlp);
+    printMLP(mlp);
     // Define learning parameters
-    double learning_rate = 0.8;
+    double learning_rate = 0.01;
     int num_epochs = 100;
     int batch_size = 1000; // Adjust based on your dataset size and memory constraints
     if (batch_size < NUM_THREADS){
