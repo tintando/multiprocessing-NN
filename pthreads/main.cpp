@@ -11,7 +11,7 @@
 
 #define N_FEATURES 8
 #define N_LABELS 1
-#define NUM_THREADS 4
+#define NUM_THREADS 50
 
 //---------------------train-------------------
 
@@ -46,7 +46,7 @@ void feedforward_thread(Thread_args* args){
 
 
 void backpropagation_thread(Thread_args* args, int sample_i){
-    //------------COMMPUTE LOSS------------------
+    //------------COMPUTE LOSS------------------
 
     // how much the result of feedforward is far from the target
     double sample_loss=0.0;
@@ -157,54 +157,83 @@ void backpropagation_thread(Thread_args* args, int sample_i){
     // Completed backward propagation for all layers.
 }
 
+pthread_cond_t waitforthread = PTHREAD_COND_INITIALIZER;
+pthread_cond_t startwork = PTHREAD_COND_INITIALIZER; // Condition variable to signal start of work
+pthread_cond_t waitformain = PTHREAD_COND_INITIALIZER; //condition variable to signal the threads that main thread is ready to make them continue
+pthread_mutex_t counter_lock = PTHREAD_MUTEX_INITIALIZER;
+int counter = 0;
+int start_flag = 0; // Flag to indicate workers can start
+int stop_flag = 0; // Flag to indicate workers should stop
+
 void *thread_action_train(void *voidArgs){
     
     Thread_args *args = (Thread_args *)voidArgs;//casting the correct type to args
 
-    //resetting the batch loss at beginning of every batch
-    args->my_batch_loss = 0.0;
-    //resetting the accumulators at beginning of every batch
-    for (int i = 1; i < args->mlp->num_layers; i++) {
-        for (int j = 0; j < args->mlp->layers_sizes[i]; j++) {
-            args->my_grad_biases_accumulator[i][j] = 0.0;
-            for (int k = 0; k < args->mlp->layers_sizes[i-1]; k++) {
-                args->my_grad_weights_accumulators[i][j * args->mlp->layers_sizes[i-1] + k] = 0.0;
+    // Wait for the signal to start work
+
+    pthread_mutex_lock(&counter_lock);
+    while (!start_flag) { // Wait until start_flag is set
+        pthread_cond_wait(&startwork, &counter_lock);
+    }
+    pthread_mutex_unlock(&counter_lock);
+
+    // will be true once the train is finished
+    while(!stop_flag){
+
+        //resetting the batch loss at beginning of every batch
+        args->my_batch_loss = 0.0;
+        //resetting the accumulators at beginning of every batch
+        for (int i = 1; i < args->mlp->num_layers; i++) {
+            for (int j = 0; j < args->mlp->layers_sizes[i]; j++) {
+                args->my_grad_biases_accumulator[i][j] = 0.0;
+                for (int k = 0; k < args->mlp->layers_sizes[i-1]; k++) {
+                    args->my_grad_weights_accumulators[i][j * args->mlp->layers_sizes[i-1] + k] = 0.0;
+                }
             }
         }
-    }
 
-    //determine the samples of the batch for this thread
-    //if it is last thread, it might have less samples, (the same number of other threads if the number of threads is divisor of batch size)
-    int my_number_of_samples = (args->thread_id == NUM_THREADS-1) ? args->batch_size/NUM_THREADS - args->batch_size%NUM_THREADS : args->batch_size/NUM_THREADS;
+        //determine the samples of the batch for this thread
+        //if it is last thread, it might have less samples, (the same number of other threads if the number of threads is divisor of batch size)
+        int my_number_of_samples = (args->thread_id == NUM_THREADS-1) ? args->batch_size/NUM_THREADS - args->batch_size%NUM_THREADS : args->batch_size/NUM_THREADS;
 
-    int my_start_index = args->batch_start_index + args->thread_id * my_number_of_samples;
-    int my_end_index = my_start_index + my_number_of_samples;
-    
-    //apply feedforward and backpropagation to each sample of the batch
-    for (int sample_i = my_start_index; sample_i<my_end_index; sample_i++) {
+        int my_start_index = args->batch_start_index + args->thread_id * my_number_of_samples;
+        int my_end_index = my_start_index + my_number_of_samples;
+        
+        //apply feedforward and backpropagation to each sample of the batch
+        for (int sample_i = my_start_index; sample_i<my_end_index; sample_i++) {
 
-        //set sample_i features as neuron activation of first layer
-        for (int j = 0; j < args->mlp->layers_sizes[0]; j++) {
-            args->my_neuron_activations[0][j] = args->dataset->samples[sample_i][j];
+            //set sample_i features as neuron activation of first layer
+            for (int j = 0; j < args->mlp->layers_sizes[0]; j++) {
+                args->my_neuron_activations[0][j] = args->dataset->samples[sample_i][j];
+            }
+
+            ////uncomment this if you want to see Input layer and all other layers at beginning of feed forward
+            // //set sample_i features as neuron activation of first layer
+            // for (int j = 0; j < args->mlp->layers_sizes[0]; j++) {
+            //     args->my_neuron_activations[0][j] = args->dataset->samples[sample_i][j];
+            // }
+            // for (int i = 1; i < args->mlp->num_layers; i++) {
+            //     for (int j = 0; j < args->mlp->layers_sizes[i]; j++) {
+            //         args->my_neuron_activations[i][j] = 0.0;// initialize
+            //     }
+            // }
+
+            feedforward_thread(args);
+            backpropagation_thread(args, sample_i);
+
         }
-
-        ////uncomment this if you want to see Input layer and all other layers at beginning of feed forward
-        // //set sample_i features as neuron activation of first layer
-        // for (int j = 0; j < args->mlp->layers_sizes[0]; j++) {
-        //     args->my_neuron_activations[0][j] = args->dataset->samples[sample_i][j];
-        // }
-        // for (int i = 1; i < args->mlp->num_layers; i++) {
-        //     for (int j = 0; j < args->mlp->layers_sizes[i]; j++) {
-        //         args->my_neuron_activations[i][j] = 0.0;// initialize
-        //     }
-        // }
-
-        feedforward_thread(args);
-        backpropagation_thread(args, sample_i);
-
+        //samples of this batch computed, tell it to the main
+        pthread_mutex_lock(&counter_lock);
+        counter++;
+        if (counter == NUM_THREADS){
+            pthread_cond_signal(&waitforthread);
+        }
+        //wait for main thread to signal that it is ready to continue
+        pthread_cond_wait(&waitformain, &counter_lock);
+        pthread_mutex_unlock(&counter_lock);
     }
-    
-    return NULL;
+        
+        return NULL;
 }
 
 void trainMLP(Data train_dataset, MLP* mlp, int num_epochs, int batch_size, double learning_rate){
@@ -229,6 +258,7 @@ void trainMLP(Data train_dataset, MLP* mlp, int num_epochs, int batch_size, doub
     for(long thread_id=0; thread_id < NUM_THREADS; thread_id++){
         thread_args[thread_id] = createThreadArgs(mlp,thread_id); 
         thread_args[thread_id]->dataset = &train_dataset;
+        pthread_create(&threads[thread_id], NULL,  thread_action_train, (void *)thread_args[thread_id]);
     }
 
     int current_batch_size;
@@ -268,12 +298,31 @@ void trainMLP(Data train_dataset, MLP* mlp, int num_epochs, int batch_size, doub
                 thread_args[thread_id]->batch_size = current_batch_size;
                 thread_args[thread_id]->batch_start_index = batch_start_index;
                 //starting the threads
-                pthread_create(&threads[thread_id], NULL,  thread_action_train, (void *)thread_args[thread_id]);
             }
 
-            for(long thread_id = 0; thread_id < NUM_THREADS; thread_id++){
-                pthread_join(threads[thread_id], NULL);
+            if (epoch==0 && batch_start_index==0){
+                // Signal worker threads to start work, all preparations are ultimated
+                pthread_mutex_lock(&counter_lock);
+                start_flag = 1;
+                pthread_cond_broadcast(&startwork);
+                pthread_mutex_unlock(&counter_lock);
             }
+            
+            // Wait for all worker threads to signal they are done
+            // Wait for all worker threads to signal they are done
+            pthread_mutex_lock(&counter_lock);
+            while (counter < NUM_THREADS){
+                //printf("Main thread is waiting on waitforthread\n");
+                pthread_cond_wait(&waitforthread, &counter_lock);
+            }
+            pthread_mutex_unlock(&counter_lock);
+            //printf("All worker threads have incremented counter and are waiting on waitformain\n");
+            pthread_mutex_lock(&counter_lock);
+            //printf("Main thread is resetting counter and took mutex\n");
+            counter = 0; // Reset counter for next iteration
+            pthread_mutex_unlock(&counter_lock);
+            //printf("Main thread is done resetting counter and released mutex\n");
+
             // printf("batch start index + batch size = %d\n", batch_start_index + batch_size);
             // printf("talking about batch %d/%d, batch size: %d\n", batch_start_index,train_dataset.size, current_batch_size);
             //printf("summing accomulators");
@@ -318,6 +367,16 @@ void trainMLP(Data train_dataset, MLP* mlp, int num_epochs, int batch_size, doub
                 }
                 //next layer
             }
+            //printf("Main thread is ready to continue, broadcasting waiting working threads\n");
+            if (batch_start_index + batch_size > train_dataset.size && epoch == num_epochs-1){
+                //printf("Main thread is done\n");
+                stop_flag = 1;
+                pthread_cond_broadcast(&waitformain); // Use broadcast to signal all waiting threads
+                break;
+            }
+            else{
+                pthread_cond_broadcast(&waitformain); // Use broadcast to signal all waiting threads
+            }
             //epoch_loss += batch_loss;
         }
         // all batches of this epoch  computed
@@ -325,6 +384,10 @@ void trainMLP(Data train_dataset, MLP* mlp, int num_epochs, int batch_size, doub
         printf("epoch_loss: %f\n", epoch_loss);
     }
     //all epochs done
+    // Join all worker threads
+    for (int i = 0; i < NUM_THREADS; i++) {
+        pthread_join(threads[i], NULL);
+    }
 }
 //-----------------end train-------------------
 
@@ -430,9 +493,9 @@ int main(int argc, char *argv[]){
     if (!mlp) return 1;
     printMLP(mlp);
     // Define learning parameters
-    double learning_rate = 0.01;
+    double learning_rate = 0.8;
     int num_epochs = 500;
-    int batch_size = 1000; // Adjust based on your dataset size and memory constraints
+    int batch_size = 4000; // Adjust based on your dataset size and memory constraints
     if (batch_size < NUM_THREADS){
         printf("Impossible to start the program, batch_size[%d] < num_thread[%d]", batch_size, NUM_THREADS);
         return 1;
@@ -453,4 +516,3 @@ int main(int argc, char *argv[]){
     freeDataset(&splitted_dataset);
     // return 0;
 }
-
