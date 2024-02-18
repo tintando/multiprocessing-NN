@@ -232,8 +232,11 @@ void *thread_action_train(void *voidArgs){
         pthread_cond_wait(&waitformain, &counter_lock);
         pthread_mutex_unlock(&counter_lock);
     }
-        
-        return NULL;
+    
+    pthread_mutex_destroy(&counter_lock);
+    pthread_cond_destroy(&waitformain);
+    pthread_cond_destroy(&waitforthread);
+    return NULL;
 }
 
 void trainMLP(Data train_dataset, MLP* mlp, int num_epochs, int batch_size, double learning_rate){
