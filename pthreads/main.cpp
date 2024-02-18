@@ -11,7 +11,7 @@
 
 #define N_FEATURES 8
 #define N_LABELS 1
-#define NUM_THREADS 1
+#define NUM_THREADS 4
 
 //---------------------train-------------------
 
@@ -431,7 +431,7 @@ int main(int argc, char *argv[]){
     printMLP(mlp);
     // Define learning parameters
     double learning_rate = 0.01;
-    int num_epochs = 100;
+    int num_epochs = 500;
     int batch_size = 1000; // Adjust based on your dataset size and memory constraints
     if (batch_size < NUM_THREADS){
         printf("Impossible to start the program, batch_size[%d] < num_thread[%d]", batch_size, NUM_THREADS);
@@ -440,8 +440,8 @@ int main(int argc, char *argv[]){
     // Train MLP
     trainMLP(splitted_dataset.train, mlp, num_epochs, batch_size, learning_rate);
     
-    //double error = evaluateMLP(mlp, splitted_dataset.test, sigmoid);
-    //printf("error is %f\n",error);
+    double error = evaluateMLP(mlp, splitted_dataset.test, sigmoid);
+    printf("error is %f\n",error);
 
     // // Clean up
     // for (int i = 0; i < n_samples; i++) {
