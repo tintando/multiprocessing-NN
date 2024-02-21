@@ -2,7 +2,7 @@
 #include "../include/activation_functions.h"
 #include "../include/mlp.h"
 
-typedef struct Thread_args{
+typedef struct Thread_args_train{
     long thread_id;
     MLP* mlp;
     double **my_neuron_activations; //the neuron activations for the samples of the thread (array of pointers (layers) to array of doubles)
@@ -17,9 +17,9 @@ typedef struct Thread_args{
     double learning_rate;
     int num_threads;
     double my_batch_loss;
-}Thread_args;
+}Thread_args_train;
 
-void printThreadArgs(const Thread_args* args) {
+void printThreadArgs_train(const Thread_args_train* args) {
     // Since thread_id is part of the args, we use it directly in the print statements.
     //if (args->thread_id!=2) return;
     printf("[%d] Thread ID: %d\n", args->thread_id, args->thread_id);
@@ -80,13 +80,13 @@ void printThreadArgs(const Thread_args* args) {
 }
 
 void *thread_hello(void *voidArgs) {
-    Thread_args *args = (Thread_args *)voidArgs;
+    Thread_args_train *args = (Thread_args_train *)voidArgs;
     // Use args->thread_id to print the ID you've assigned in your structure
     printf("Hello world from thread %ld\n", args->thread_id);
     return NULL;
 }
 
-void freeThreadArgs(Thread_args* args){
+void freeThreadArgs_train(Thread_args_train* args){
     for (int i = 0; i <= args->mlp->num_layers; i++) {
         free(args->my_neuron_activations[i]);
         free(args->my_delta[i]);
@@ -113,9 +113,9 @@ void freeThreadArgs(Thread_args* args){
     - grad_biases_accumulator -> array of pointers to array of doubles
     - my loss -> the loss over this batch for the thread
     */
-Thread_args* createThreadArgs(MLP *mlp, long thread_id){
+Thread_args_train* createThreadArgs_train(MLP *mlp, long thread_id){
     //args for the specific thread
-    Thread_args* args = (Thread_args*) malloc(sizeof(Thread_args));
+    Thread_args_train* args = (Thread_args_train*) malloc(sizeof(Thread_args_train));
     if (!args) return NULL;
     //printf("initializing args for thread %d\n", thread_id);
     args->thread_id = thread_id;
@@ -168,7 +168,7 @@ Thread_args* createThreadArgs(MLP *mlp, long thread_id){
 
     //free memory if there are errors in allocations
     if (args->my_neuron_activations == NULL || args->my_delta == NULL || args->my_grad_weights_accumulators == NULL || args->my_grad_biases_accumulator == NULL){
-        freeThreadArgs(args);
+        freeThreadArgs_train(args);
         return NULL;
     }
 

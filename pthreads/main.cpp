@@ -7,11 +7,12 @@
 #include "include/activation_functions.h"
 #include "include/dataset.h"
 #include "include/mlp.h"
-#include "include/threads.h"
+#include "include/threads_train.h"
 
 #define N_FEATURES 8
 #define N_LABELS 1
 #define NUM_THREADS 50
+#define NUM_ACC_THREADS 1
 
 //---------------------train-------------------
 
@@ -32,7 +33,7 @@ void matrixMultiplyAndAddBias(double *output, double *input,
     }
 }
 
-void feedforward_thread(Thread_args* args){
+void feedforward_thread(Thread_args_train* args){
 
     // compute neuron activation for the hidden layers and output layer
     for (int i = 1; i < args->mlp->num_layers; i++) {
@@ -45,7 +46,7 @@ void feedforward_thread(Thread_args* args){
 }
 
 
-void backpropagation_thread(Thread_args* args, int sample_i){
+void backpropagation_thread(Thread_args_train* args, int sample_i){
     //------------COMPUTE LOSS------------------
 
     // how much the result of feedforward is far from the target
@@ -157,28 +158,28 @@ void backpropagation_thread(Thread_args* args, int sample_i){
     // Completed backward propagation for all layers.
 }
 
-pthread_cond_t waitforthread = PTHREAD_COND_INITIALIZER;
-pthread_cond_t startwork = PTHREAD_COND_INITIALIZER; // Condition variable to signal start of work
-pthread_cond_t waitformain = PTHREAD_COND_INITIALIZER; //condition variable to signal the threads that main thread is ready to make them continue
+pthread_cond_t cond_waitfor_train_main = PTHREAD_COND_INITIALIZER;
+pthread_cond_t cond_start_train = PTHREAD_COND_INITIALIZER; // Condition variable to signal start of work
+pthread_cond_t cond_waitfor_main_train = PTHREAD_COND_INITIALIZER; //condition variable to signal the threads that main thread is ready to make them continue
 pthread_mutex_t counter_lock = PTHREAD_MUTEX_INITIALIZER;
-int counter = 0;
-int start_flag = 0; // Flag to indicate workers can start
-int stop_flag = 0; // Flag to indicate workers should stop
+int global_counter_train = 0;
+int flag_start_train = 0; // Flag to indicate workers can start
+int flag_stop_train = 0; // Flag to indicate workers should stop
 
 void *thread_action_train(void *voidArgs){
     
-    Thread_args *args = (Thread_args *)voidArgs;//casting the correct type to args
+    Thread_args_train *args = (Thread_args_train *)voidArgs;//casting the correct type to args
 
     // Wait for the signal to start work
 
     pthread_mutex_lock(&counter_lock);
-    while (!start_flag) { // Wait until start_flag is set
-        pthread_cond_wait(&startwork, &counter_lock);
+    while (!flag_start_train) { // Wait until flag_start_train is set
+        pthread_cond_wait(&cond_start_train, &counter_lock);
     }
     pthread_mutex_unlock(&counter_lock);
 
     // will be true once the train is finished
-    while(!stop_flag){
+    while(!flag_stop_train){
 
         //resetting the batch loss at beginning of every batch
         args->my_batch_loss = 0.0;
@@ -224,26 +225,27 @@ void *thread_action_train(void *voidArgs){
         }
         //samples of this batch computed, tell it to the main
         pthread_mutex_lock(&counter_lock);
-        counter++;
-        if (counter == NUM_THREADS){
-            pthread_cond_signal(&waitforthread);
+        global_counter_train++;
+        if (global_counter_train == NUM_THREADS){
+            pthread_cond_signal(&cond_waitfor_train_main);
         }
         //wait for main thread to signal that it is ready to continue
-        pthread_cond_wait(&waitformain, &counter_lock);
+        pthread_cond_wait(&cond_waitfor_main_train, &counter_lock);
         pthread_mutex_unlock(&counter_lock);
     }
     
     pthread_mutex_destroy(&counter_lock);
-    pthread_cond_destroy(&waitformain);
-    pthread_cond_destroy(&waitforthread);
+    pthread_cond_destroy(&cond_waitfor_main_train);
+    pthread_cond_destroy(&cond_waitfor_train_main);
     return NULL;
 }
+
 
 void trainMLP(Data train_dataset, MLP* mlp, int num_epochs, int batch_size, double learning_rate){
     
     //initialize thread data structures
     pthread_t threads[NUM_THREADS]; //thread identifier
-    Thread_args* thread_args[NUM_THREADS]; // array of thread data, one specific for thread
+    Thread_args_train* thread_args_train[NUM_THREADS]; // array of thread data, one specific for thread
 
     // thread independent accomulator of gradient weights for a batch, it is gonna be resetted every batch
     // an array of pointers(layer) that point an to array of pointers(neurons of current layer) that point to an array of double (neurons of prevoius layer)
@@ -259,9 +261,9 @@ void trainMLP(Data train_dataset, MLP* mlp, int num_epochs, int batch_size, doub
 
     //Initializes the variables that are persistent in the epochs or data stractures that keep the same shape
     for(long thread_id=0; thread_id < NUM_THREADS; thread_id++){
-        thread_args[thread_id] = createThreadArgs(mlp,thread_id); 
-        thread_args[thread_id]->dataset = &train_dataset;
-        pthread_create(&threads[thread_id], NULL,  thread_action_train, (void *)thread_args[thread_id]);
+        thread_args_train[thread_id] = createThreadArgs_train(mlp,thread_id); 
+        thread_args_train[thread_id]->dataset = &train_dataset;
+        pthread_create(&threads[thread_id], NULL,  thread_action_train, (void *)thread_args_train[thread_id]);
     }
 
     int current_batch_size;
@@ -298,33 +300,33 @@ void trainMLP(Data train_dataset, MLP* mlp, int num_epochs, int batch_size, doub
             // initializing data structures of threads that are dependent on the batch
             for (long thread_id = 0; thread_id < NUM_THREADS; ++thread_id) {
                 
-                thread_args[thread_id]->batch_size = current_batch_size;
-                thread_args[thread_id]->batch_start_index = batch_start_index;
+                thread_args_train[thread_id]->batch_size = current_batch_size;
+                thread_args_train[thread_id]->batch_start_index = batch_start_index;
                 //starting the threads
             }
 
             if (epoch==0 && batch_start_index==0){
                 // Signal worker threads to start work, all preparations are ultimated
                 pthread_mutex_lock(&counter_lock);
-                start_flag = 1;
-                pthread_cond_broadcast(&startwork);
+                flag_start_train = 1;
+                pthread_cond_broadcast(&cond_start_train);
                 pthread_mutex_unlock(&counter_lock);
             }
             
             // Wait for all worker threads to signal they are done
             // Wait for all worker threads to signal they are done
             pthread_mutex_lock(&counter_lock);
-            while (counter < NUM_THREADS){
-                //printf("Main thread is waiting on waitforthread\n");
-                pthread_cond_wait(&waitforthread, &counter_lock);
+            while (global_counter_train < NUM_THREADS){
+                //printf("Main thread is waiting on cond_waitfor_train_main\n");
+                pthread_cond_wait(&cond_waitfor_train_main, &counter_lock);
             }
             pthread_mutex_unlock(&counter_lock);
-            //printf("All worker threads have incremented counter and are waiting on waitformain\n");
+            //printf("All worker threads have incremented global_counter_train and are waiting on cond_waitfor_main_train\n");
             pthread_mutex_lock(&counter_lock);
-            //printf("Main thread is resetting counter and took mutex\n");
-            counter = 0; // Reset counter for next iteration
+            //printf("Main thread is resetting global_counter_train and took mutex\n");
+            global_counter_train = 0; // Reset global_counter_train for next iteration
             pthread_mutex_unlock(&counter_lock);
-            //printf("Main thread is done resetting counter and released mutex\n");
+            //printf("Main thread is done resetting global_counter_train and released mutex\n");
 
             // printf("batch start index + batch size = %d\n", batch_start_index + batch_size);
             // printf("talking about batch %d/%d, batch size: %d\n", batch_start_index,train_dataset.size, current_batch_size);
@@ -332,17 +334,17 @@ void trainMLP(Data train_dataset, MLP* mlp, int num_epochs, int batch_size, doub
             //sum the accumulators of all the threads (this should be parralelized)
             for (int thread_id = 0; thread_id < NUM_THREADS; thread_id++){
                 //summing batch loss
-                epoch_loss += thread_args[thread_id]->my_batch_loss;
+                epoch_loss += thread_args_train[thread_id]->my_batch_loss;
                 for (int i = 1; i < mlp->num_layers; i++) {
                     // loop trough each neuron of the layer
                     for (int j = 0; j < mlp->layers_sizes[i]; j++) {
                         //summing biases accomulators
-                        grad_biases_accumulator[i][j] += thread_args[thread_id]->my_grad_biases_accumulator[i][j];
-                        // printf("[%d]my_grad_biases_accumulator[%d][%d] = %f\n",thread_id, i, j, thread_args[thread_id]->my_grad_biases_accumulator[i][j]);
+                        grad_biases_accumulator[i][j] += thread_args_train[thread_id]->my_grad_biases_accumulator[i][j];
+                        // printf("[%d]my_grad_biases_accumulator[%d][%d] = %f\n",thread_id, i, j, thread_args_train[thread_id]->my_grad_biases_accumulator[i][j]);
                         for (int k = 0; k < mlp->layers_sizes[i-1]; k++) {
                             //summing weights accomulators
-                            grad_weights_accumulators[i][j * mlp->layers_sizes[i-1] + k] += thread_args[thread_id]->my_grad_weights_accumulators[i][j * mlp->layers_sizes[i-1] + k];
-                            // printf("[%d]my_grad_weights_accumulators[%d][%d] = %f\n",thread_id, i, j * mlp->layers_sizes[i-1] + k, thread_args[thread_id]->my_grad_weights_accumulators[i][j * mlp->layers_sizes[i-1] + k]);
+                            grad_weights_accumulators[i][j * mlp->layers_sizes[i-1] + k] += thread_args_train[thread_id]->my_grad_weights_accumulators[i][j * mlp->layers_sizes[i-1] + k];
+                            // printf("[%d]my_grad_weights_accumulators[%d][%d] = %f\n",thread_id, i, j * mlp->layers_sizes[i-1] + k, thread_args_train[thread_id]->my_grad_weights_accumulators[i][j * mlp->layers_sizes[i-1] + k]);
                         }
                     }
                 }
@@ -373,12 +375,12 @@ void trainMLP(Data train_dataset, MLP* mlp, int num_epochs, int batch_size, doub
             //printf("Main thread is ready to continue, broadcasting waiting working threads\n");
             if (batch_start_index + batch_size > train_dataset.size && epoch == num_epochs-1){
                 //printf("Main thread is done\n");
-                stop_flag = 1;
-                pthread_cond_broadcast(&waitformain); // Use broadcast to signal all waiting threads
+                flag_stop_train = 1;
+                pthread_cond_broadcast(&cond_waitfor_main_train); // Use broadcast to signal all waiting threads
                 break;
             }
             else{
-                pthread_cond_broadcast(&waitformain); // Use broadcast to signal all waiting threads
+                pthread_cond_broadcast(&cond_waitfor_main_train); // Use broadcast to signal all waiting threads
             }
             //epoch_loss += batch_loss;
         }
@@ -397,16 +399,16 @@ void trainMLP(Data train_dataset, MLP* mlp, int num_epochs, int batch_size, doub
 //----------------evaluation------------------
 void *thread_action_evaluation(void *voidArgs){
     //the thread thinks the whole train dataset is a batch, so it will split it evenly
-    Thread_args *args = (Thread_args *)voidArgs;//casting the correct type to args
+    Thread_args_train *args = (Thread_args_train *)voidArgs;//casting the correct type to args
 
     //if it is last thread, it might have less samples, (the same number of other threads if the number of threads is divisor of batch size)
     int my_number_of_samples = (args->thread_id == NUM_THREADS-1) ? args->batch_size/NUM_THREADS - args->batch_size%NUM_THREADS : args->batch_size/NUM_THREADS;
-    printf("[%d]my_number_of_samples = %d\n",args->thread_id, my_number_of_samples);
+    //printf("[%d]my_number_of_samples = %d\n",args->thread_id, my_number_of_samples);
     //int my_number_of_samples = args->batch_size/NUM_THREADS; //with one thread
     //printf("[%d] i have %d samples, in particular from %d to %d, batch size = %d --- batch start index = %d \n", args->thread_id, my_number_of_samples, args->batch_start_index + args->thread_id * my_number_of_samples, args->batch_start_index + args->thread_id * my_number_of_samples + my_number_of_samples, args->batch_size, args->batch_start_index);
     int my_start_index = args->batch_start_index + args->thread_id * my_number_of_samples;
     int my_end_index = my_start_index + my_number_of_samples;
-    printf("[%d] i have %d samples, in particular from %d to %d, batch size = %d --- batch start index = %d \n", args->thread_id, my_number_of_samples, my_start_index, my_end_index, args->batch_size, args->batch_start_index);
+    //printf("[%d] i have %d samples, in particular from %d to %d, batch size = %d --- batch start index = %d \n", args->thread_id, my_number_of_samples, my_start_index, my_end_index, args->batch_size, args->batch_start_index);
 
     for (int sample_i = my_start_index; sample_i<my_end_index; sample_i++) {
         //set sample_i features as neuron activation of first layer
@@ -422,7 +424,7 @@ void *thread_action_evaluation(void *voidArgs){
         for (int j = 0; j < args->mlp->layers_sizes[last_layer_index]; j++) {    
             // Calculate error for this sample
             double error = args->dataset->targets[sample_i][j] - args->my_neuron_activations[last_layer_index][j];
-            printf("[%d] target:%f activation:%f error = %f\n",args->thread_id, args->dataset->targets[sample_i][j], args->my_neuron_activations[last_layer_index][j], args->thread_id, error);
+            //printf("[%d] target:%f activation:%f error = %f\n",args->thread_id, args->dataset->targets[sample_i][j], args->my_neuron_activations[last_layer_index][j], args->thread_id, error);
             sample_loss += error * error; // For MSE, sum the squared error
         }
         args->my_batch_loss += sample_loss;
@@ -435,18 +437,18 @@ double evaluateMLP(MLP *mlp, Data test_data, ActivationFunction act) {
     printf("STARTING EVALUATION: test_data.size = %d\n", test_data.size);
     //threads will split the train dataset and each compute their samples
     pthread_t threads[NUM_THREADS]; //thread identifier
-    Thread_args* thread_args[NUM_THREADS]; // array of thread data, one specific for thread
+    Thread_args_train* thread_args_evaluate[NUM_THREADS]; // array of thread data, one specific for thread
 
     for(long thread_id=0; thread_id < NUM_THREADS; thread_id++){
         printf("creating thread %d\n", thread_id);
-        thread_args[thread_id] = createThreadArgs(mlp,thread_id); 
-        thread_args[thread_id]->dataset = &test_data;
+        thread_args_evaluate[thread_id] = createThreadArgs_train(mlp,thread_id); 
+        thread_args_evaluate[thread_id]->dataset = &test_data;
 
         //the threads think the whole train dataset is a batch, so they will split it evenly
-        thread_args[thread_id]->batch_size = test_data.size;
-        thread_args[thread_id]->batch_start_index = 0;
-        printf("thread_args[%d]->batch_size = %d\n", thread_id, thread_args[thread_id]->batch_size);
-        pthread_create(&threads[thread_id], NULL,  thread_action_evaluation, (void *)thread_args[thread_id]);
+        thread_args_evaluate[thread_id]->batch_size = test_data.size;
+        thread_args_evaluate[thread_id]->batch_start_index = 0;
+        printf("thread_args_evaluate[%d]->batch_size = %d\n", thread_id, thread_args_evaluate[thread_id]->batch_size);
+        pthread_create(&threads[thread_id], NULL,  thread_action_evaluation, (void *)thread_args_evaluate[thread_id]);
         printf("thread %d created\n", thread_id);
     }
 
@@ -455,8 +457,7 @@ double evaluateMLP(MLP *mlp, Data test_data, ActivationFunction act) {
     }
 
     for(long thread_id = 0; thread_id < NUM_THREADS; thread_id++){
-        total_error += thread_args[thread_id]->my_batch_loss;//this sum can be done in parallel
-        printf("thread_args[%d]->my_batch_loss = %f\n", thread_id, thread_args[thread_id]->my_batch_loss);
+        total_error += thread_args_evaluate[thread_id]->my_batch_loss;//this sum can be done in parallel
     }
 
     // Return average MSE over the test set
@@ -496,8 +497,8 @@ int main(int argc, char *argv[]){
     if (!mlp) return 1;
     printMLP(mlp);
     // Define learning parameters
-    double learning_rate = 0.8;
-    int num_epochs = 500;
+    double learning_rate = 0.01;
+    int num_epochs = 6000;
     int batch_size = 4000; // Adjust based on your dataset size and memory constraints
     if (batch_size < NUM_THREADS){
         printf("Impossible to start the program, batch_size[%d] < num_thread[%d]", batch_size, NUM_THREADS);

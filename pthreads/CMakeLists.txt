@@ -14,7 +14,7 @@ find_package(Threads REQUIRED)
 # Add your source files here
 set(SOURCES
     main.cpp
-    src/threads.cpp
+    src/threads_train.cpp
     src/activation_functions.cpp
     src/mlp.cpp
     src/dataset.cpp

@@ -12,13 +12,12 @@
                = weight between a node of the current layer and a node of previous layer
 */
 
-#define NUM_THREADS 30
-#define NUM_ACC_THREADS 60
-#define TOTAL_ITERATIONS_SUM 5000
+#define NUM_THREADS 5
+#define NUM_ACC_THREADS 6
 
-pthread_cond_t cond_waitfor_accumulatorWB_main = PTHREAD_COND_INITIALIZER;
-pthread_cond_t cond_start_accomulatorsWB = PTHREAD_COND_INITIALIZER; // Condition variable to signal start of work
+pthread_cond_t cond_waitfor_accumulatorWB_main = PTHREAD_COND_INITIALIZER; //condition vairable to signal the main threads all the accomulators for weight and bias are done
 pthread_cond_t cond_waitfor_main_accomulatorWB = PTHREAD_COND_INITIALIZER; //condition variable to signal the threads that main thread is ready to make them continue
+pthread_cond_t cond_start_accomulatorsWB = PTHREAD_COND_INITIALIZER; // Condition variable to signal start of work
 pthread_mutex_t lock_counter_accomulatorsWB_done = PTHREAD_MUTEX_INITIALIZER;
 int counter_accomulatorsWB_done = 0;
 int flag_start_accomulatorsWB = 0; // Flag to indicate workers can start
@@ -31,24 +30,25 @@ typedef struct {
     double*** weights_global; //pointer to list of weights of main thread (pointer to an array of pointers(layer) to an array of weights)
     int start_layer_weight;
     int start_weight;
-    int weight_counter_max;
+    int weight_counter_local_max;
     int num_layers; 
     int** layers_size; //pointer to array of pointers(layer) to layers sizes
-    int num_working_threads; //how many working threads there are (if there are more threads than wights in the NN)
-} Thread_args_accomulator;
+} Thread_args_sum;
+
+
 
 //popular way to initialize weights
 //helps in keeping the signal from the input to flow well into the deep network.
 void initializeXavier(double *weights, int in, int out) {
-    // in = prev_layer_size
-    // out = layer size
-    // weights = weights between nodes of previous and current layer
     double limit = sqrt(6.0 / (in + out));
     for (int i = 0; i < in * out; i++) {
         weights[i] = (rand() / (double)(RAND_MAX)) * 2 * limit - limit;
     }
 }
 
+
+
+//returns a pointer to an array of pointers (thread) to an array of pointers(layer) to an array of weights
 double*** createWeights(int num_layers, int* layers_size) {
     double*** weights = (double***) malloc(NUM_THREADS * sizeof(double**));
     for (int t = 0; t < NUM_THREADS; t++) {
@@ -59,92 +59,104 @@ double*** createWeights(int num_layers, int* layers_size) {
         }
         // Print weights
         for (int i = 1; i < num_layers; i++) { // Start from 1 since weights are between layers
-            printf("Weights to Layer %d: \n", i);
+            //printf("Weights to Layer %d: \n", i);
             for (int j = 0; j < layers_size[i]; j++) {
                 for (int k = 0; k < layers_size[i-1]; k++) {
-                    printf("W[%d][%d][%d]: %lf ",t, j, k, weights[t][i][j * layers_size[i-1] + k]);
+                    //printf("W[%d][%d][%d]: %lf ",t, j, k, weights[t][i][j * layers_size[i-1] + k]);
                 }
-                printf("\n");
+                //printf("\n");
             }       
         }
     }
     return weights;
 }
+
+
+
+
  void *thread_function(void* voidArgs){
-    Thread_args_accomulator *args = (Thread_args_accomulator*)voidArgs;
+    Thread_args_sum *args = (Thread_args_sum*)voidArgs;
     long thread_id = args->thread_id;
-    printf("[%d] starts from layer %d\n", thread_id, args->start_layer_weight);
+    printf("[%d] start from weight[%d][%d] and sum %d weights\n", thread_id, args->start_layer_weight, args->start_weight, args->weight_counter_local_max);
 
     
     //wait until main thread says to start
     pthread_mutex_lock(&lock_counter_accomulatorsWB_done);
     while (!flag_start_accomulatorsWB) { // Wait until start_flag is set
-        printf("thread[%d] is sleeping on cond_start_accomulatorsWB\n", args->thread_id);
+        printf("[%d] sleeping on start_accomulatorsWB_cond\n", args->thread_id);
         pthread_cond_wait(&cond_start_accomulatorsWB, &lock_counter_accomulatorsWB_done);
+        printf("[%d] wake up\n", thread_id);
     }
     pthread_mutex_unlock(&lock_counter_accomulatorsWB_done);
 
-    int counter;
-    int next_layer_flag;
+    int counter_local;//keeps track of how many weights have been summed
+    int next_layer_flag;//tells if the thread has to start from the first weight of the next layer
 
-    while(!flag_stop_accomulatorsWB){
+    while(1){
+        //checking if the stop flag is true, in case break the loop
+        pthread_mutex_lock(&lock_counter_accomulatorsWB_done);
+            printf("[%ld] is checking flag_stop_accomulatorsWB\n", args->thread_id);
+            if(flag_stop_accomulatorsWB) break;
+        pthread_mutex_unlock(&lock_counter_accomulatorsWB_done);
 
-        counter = 0;
-        next_layer_flag;
+        //waiting for signal to continue from main thread
+        pthread_mutex_lock(&lock_counter_accomulatorsWB_done);
+            printf("[%ld] is waiting on cond_waitfor_main_accomulatorWB\n", args->thread_id);
+            pthread_cond_wait(&cond_waitfor_main_accomulatorWB, &lock_counter_accomulatorsWB_done);
+        pthread_mutex_unlock(&lock_counter_accomulatorsWB_done);
+
+        counter_local = 0; 
+        next_layer_flag = 0;
 
         //start summing the weights from the range of each thread
-        for (int i = args->start_layer_weight; i <= args->num_layers; i++) {
-            printf("thread[%d] is working on layer[%d]\n",thread_id, i);
-
-            if (i==-1) {printf("thread[%d] is done because it starts weights from -1\n", thread_id); break;}//if it is done, it has to break the loop
+        for (int i = args->start_layer_weight; i < args->num_layers; i++) {
+            //printf("thread[%d] is working on layer[%d]\n",thread_id, i);
 
             //if the thread changes layer, it has to start from the first weight, otherwise it has to start from its weight range
             for (int w = (next_layer_flag)? 0 : args->start_weight; w < (*args->layers_size)[i] * (*args->layers_size)[i-1]; w++) {
-                printf("thread[%d] is working on weight[%d][%d]\n",thread_id, i, w);
-                
-                //if summed all the weights of the thread, it is done
-                if (counter == args->weight_counter_max){
-                    printf("thread[%d] was joking,\n", thread_id);
-                    break;
-                }
-
+    
+                printf("[%d] working on weight[%d][%d]\n",thread_id, i, w);
                 //sum the weights
                 for (int t = 0; t < NUM_THREADS; t++){
                     (*args->weights_global)[i][w] += (*args->weights_threads)[t][i][w];
-                    printf("thread [%d] is summing weight[%d][%d][%d] = %lf\n",thread_id, t, i, w, (*args->weights_threads)[t][i][w]);
+                    //printf("thread [%d] is summing weight[%d][%d][%d] = %lf\n",thread_id, t, i, w, (*args->weights_threads)[t][i][w]);
                 }
-                counter++;
-                printf("counter = %d\n", counter);
+                counter_local++;
+                //printf("[%d] finished working on weight[%d][%d], increasing counter_local:%d", thread_id, i, w, counter_local);
+                //if summed all the weights of the thread, it is done
+                if (counter_local == args->weight_counter_local_max){
+                    printf("[%d] counter_local is %d , i stop at weight[%d][%d]\n", thread_id, counter_local, i, w);
+                    break;
+                }
             }
 
-            //if it is done, it has to break the loop
-            if (counter == args->weight_counter_max){
-                printf("thread[%d] is done\n", thread_id);
+            //if it is done, it has to stop summing
+            if (counter_local == args->weight_counter_local_max){
+                printf("[%d] i'm done\n", thread_id);
                     break;
                 }
             //if it is not done, it has to start from the first weight of the next layer
             else next_layer_flag = 1;
+            printf("[%d] will continue from weight[%d][%d]\n", thread_id, i+1, 0);
         }
-        if (args->start_layer_weight == -1) break;
-        //accomulated my weights
-        printf("accomulated my weights\n");
+        
 
         // Signal main thread that this worker is done
         pthread_mutex_lock(&lock_counter_accomulatorsWB_done);
-        printf("Thread %ld is incrementing counter and took mutex, counter = %d\n", args->thread_id, counter_accomulatorsWB_done+1);
-        counter_accomulatorsWB_done++;
-        if (counter_accomulatorsWB_done == args->num_working_threads){
-            printf("Thread %ld is signaling waitforthread, and released mutex\n", args->thread_id);
-            pthread_cond_signal(&cond_waitfor_accumulatorWB_main);
-        }
-        //wait for main thread to signal that it is ready to continue
-        printf("Thread %ld is waiting on waitformain and released mutex\n", args->thread_id);
-        pthread_cond_wait(&cond_waitfor_main_accomulatorWB, &lock_counter_accomulatorsWB_done);
+            printf("[%d] finished, incrementing counter_accomulatorsWB_done to %d\n", args->thread_id, counter_accomulatorsWB_done+1);
+            counter_accomulatorsWB_done++;
+            //if it is the last thread, signal the main thread
+            if (counter_accomulatorsWB_done == NUM_ACC_THREADS-1){
+                printf("Thread %ld is signaling cond_waitfor_accumulatorWB_main\n", args->thread_id);
+                pthread_cond_signal(&cond_waitfor_accumulatorWB_main);
+            }
         pthread_mutex_unlock(&lock_counter_accomulatorsWB_done);
+
     }
-    if (args->start_layer_weight == -1) printf("thread[%d] is done because layer is -1\n", thread_id);
+
     return NULL;
  }
+
 
 
  void accessWeights(double**** weight){
@@ -156,14 +168,17 @@ double*** createWeights(int num_layers, int* layers_size) {
     Finally, (*weight)[0][0][0] correctly accesses the first double value.
     */
     double w = (*weight)[0][1][0]; // Correctly dereferences to the first element
-    printf("weight[0][0][0] = %lf\n", w);
+    //printf("weight[0][0][0] = %lf\n", w);
  }
 
  void accessargWeights(void* voidArgs){
-    Thread_args_accomulator *args = (Thread_args_accomulator*)voidArgs;
+    Thread_args_sum *args = (Thread_args_sum*)voidArgs;
 
     double my_weight = (*args->weights_threads)[0][1][0];
  }
+
+
+
 
 int main() {
 
@@ -184,16 +199,15 @@ int main() {
     int total_weights = 0;
     for(int i = 1; i < num_layers; i++){
         total_weights += layers_size[i] * layers_size[i-1];
-        printf("layer[%d] has %d weights connecting to previous layer\n", i, layers_size[i] * layers_size[i-1]);
+        //printf("layer[%d] has %d weights connecting to previous layer\n", i, layers_size[i] * layers_size[i-1]);
     }
-    printf("total_weights = %d\n", total_weights);
 
-    int weights_per_thread = total_weights/NUM_ACC_THREADS;
-    printf("weights_per_thread = %d\n", weights_per_thread);
-    int remainder = total_weights%NUM_ACC_THREADS;
-    printf("remainder = %d\n", remainder);
+    int weights_per_thread = total_weights/NUM_THREADS;
+    //printf("weights_per_thread = %d\n", weights_per_thread);
+    int remainder = total_weights%NUM_THREADS;
+    //printf("remainder = %d\n", remainder);
 
-    Thread_args_accomulator* thread_args_accomulatorWB = (Thread_args_accomulator*)malloc(NUM_ACC_THREADS* sizeof(Thread_args_accomulator));
+    Thread_args_sum* thread_args_sum = (Thread_args_sum*)malloc(NUM_THREADS* sizeof(Thread_args_sum));
 
     int start_flag = 1;
     int thread_id = 0;
@@ -201,26 +215,21 @@ int main() {
     for (int i = 1; i<num_layers; i++){
         for (int w=0; w<layers_size[i]*layers_size[i-1]; w++){//iterate trough the weights
             if (start_flag) {
-                printf("thread %d starts from [%d][%d]\n", thread_id, i, w); 
-                thread_args_accomulatorWB[thread_id].start_layer_weight = i;
-                thread_args_accomulatorWB[thread_id].start_weight = w;
+                //printf("thread %d starts from [%d][%d]\n", thread_id, i, w); 
+                thread_args_sum[thread_id].start_layer_weight = i;
+                thread_args_sum[thread_id].start_weight = w;
                 start_flag = 0;
             }
             count++;
             if (count >= ((remainder>0) ? weights_per_thread + 1 : weights_per_thread)){
-                printf("thread %d finishs at [%d][%d]\n", thread_id, i, w);
-                thread_args_accomulatorWB[thread_id].weight_counter_max = count;
+                //printf("thread %d finishs at [%d][%d]\n", thread_id, i, w);
+                thread_args_sum[thread_id].weight_counter_local_max = count;
                 start_flag = 1;
                 remainder --;
                 thread_id ++;
                 count = 0;
             }
         }
-    }
-    int num_working_weights_threads = thread_id;
-    for (int i = 0; i < NUM_ACC_THREADS; i++){
-        if (i >= num_working_weights_threads) thread_args_accomulatorWB[i].start_layer_weight = -1;
-        thread_args_accomulatorWB[i].num_working_threads = num_working_weights_threads;
     }
 
     //------------each thread now knows the range of weights it has to sum----------------
@@ -234,116 +243,115 @@ int main() {
         global_weights2[i] = (double*)calloc(layers_size[i] * layers_size[i-1], sizeof(double));
     }
     
-    for (int thread_id=0; thread_id<NUM_ACC_THREADS; thread_id++){//thread_id simulates multithreading
-        printf("thread[%d] will sum weights from [%d][%d] \n", thread_id, thread_args_accomulatorWB[thread_id].start_layer_weight, thread_args_accomulatorWB[thread_id].start_weight);
+    for (int thread_id=0; thread_id<NUM_THREADS; thread_id++){//thread_id simulates multithreading
+        //printf("thread[%d] will sum weights from [%d][%d] \n", thread_id, thread_args_sum[thread_id].start_layer_weight, thread_args_sum[thread_id].start_weight);
         
-        int counter = 0;
+        int counter_local = 0;
         next_layer_flag = 0;
 
         //start summing the weights from the range of each thread
-        for (int i = thread_args_accomulatorWB[thread_id].start_layer_weight; i <= num_layers; i++) {
-            printf("thread[%d] is working on layer[%d]\n",thread_id, i);
+        for (int i = thread_args_sum[thread_id].start_layer_weight; i <= num_layers; i++) {
+            //printf("thread[%d] is working on layer[%d]\n",thread_id, i);
 
             //if the thread changes layer, it has to start from the first weight, otherwise it has to start from its weight range
-            for (int w = (next_layer_flag)? 0 : thread_args_accomulatorWB[thread_id].start_weight; w < layers_size[i]*layers_size[i-1]; w++) {
-                printf("thread[%d] is working on weight[%d][%d]\n",thread_id, i, w);
+            for (int w = (next_layer_flag)? 0 : thread_args_sum[thread_id].start_weight; w < layers_size[i]*layers_size[i-1]; w++) {
+                //printf("thread[%d] is working on weight[%d][%d]\n",thread_id, i, w);
                 
                 //if summed all the weights of the thread, it is done
-                if (counter == thread_args_accomulatorWB[thread_id].weight_counter_max){
-                    printf("thread[%d] was joking,\n", thread_id);
+                if (counter_local == thread_args_sum[thread_id].weight_counter_local_max){
+                    //printf("thread[%d] was joking,\n", thread_id);
                     break;
                 }
 
                 //sum the weights
-                for (int k = 0; k < TOTAL_ITERATIONS_SUM; k++){
                 for (int t = 0; t < NUM_THREADS; t++){
                     double weight = (weights[t][i][w]);
-                    printf("thread [%d] is summing weight[%d][%d][%d] = %lf\n",thread_id, t, i, w, weight);
-                    global_weights2[i][w] += weight;
+                    //printf("thread [%d] is summing weight[%d][%d][%d] = %lf\n",thread_id, t, i, w, weight);
+                    global_weights2[i][w] += weight * 50;
                 }
-                }
-                counter++;
-                printf("counter = %d\n", counter);
+                counter_local++;
+                //printf("counter_local = %d\n", counter_local);
             }
 
             //if it is done, it has to break the loop
-            if (counter == thread_args_accomulatorWB[thread_id].weight_counter_max){
-                printf("thread[%d] is done\n", thread_id);
+            if (counter_local == thread_args_sum[thread_id].weight_counter_local_max){
+                //printf("thread[%d] is done\n", thread_id);
                     break;
                 }
             //if it is not done, it has to start from the first weight of the next layer
             else next_layer_flag = 1;
         }
     }
-    thread_args_accomulatorWB[0].weights_threads = &weights;
+    thread_args_sum[0].weights_threads = &weights;
         accessWeights(&weights);
-    printf("STARTING MULTITHREADED-----------------------------------------------------------------------------");
+    //printf("STARTING MULTITHREADED-----------------------------------------------------------------------------");
     double** global_weights = (double**) malloc(NUM_THREADS * sizeof(double*));
     for (int i = 1; i<num_layers; i++){
         global_weights[i] = (double*)calloc(layers_size[i]*layers_size[i-1], sizeof(double));
     }
 
-    pthread_t threads[NUM_ACC_THREADS];
-    for (long t = 0; t < NUM_ACC_THREADS; t++) {
-        printf("Creating thread %d\n", t);
-        thread_args_accomulatorWB[t].thread_id = t;
-        thread_args_accomulatorWB[t].weights_threads = &weights;
-        thread_args_accomulatorWB[t].weights_global = &global_weights;
-        accessWeights(thread_args_accomulatorWB[t].weights_threads);
-        thread_args_accomulatorWB[t].num_layers = num_layers;
-        thread_args_accomulatorWB[t].layers_size = &layers_size;
-        pthread_create(&threads[t], NULL, thread_function, (void*)&(thread_args_accomulatorWB[t]));
+    pthread_t threads[NUM_THREADS];
+    for (long t = 0; t < NUM_THREADS; t++) {
+        //printf("Creating thread %d\n", t);
+        thread_args_sum[t].thread_id = t;
+        thread_args_sum[t].weights_threads = &weights;
+        thread_args_sum[t].weights_global = &global_weights;
+        accessWeights(thread_args_sum[t].weights_threads);
+        thread_args_sum[t].num_layers = num_layers;
+        thread_args_sum[t].layers_size = &layers_size;
+        pthread_create(&threads[t], NULL, thread_function, (void*)&(thread_args_sum[t]));
     }
-    int i = 0;
-    while(1){
-        i++;
-        printf("iteration %d\n", i);
+//start main thread work!!!!!!!!
+
+    // Signal worker threads to start work
+    printf("Main thread is starting all WB threads waiting on lock_counter_accomulatorsWB_done by setting flag to 1\n");
+    pthread_mutex_lock(&lock_counter_accomulatorsWB_done);
+    flag_start_accomulatorsWB = 1;
+    pthread_cond_broadcast(&cond_start_accomulatorsWB);
+    pthread_mutex_unlock(&lock_counter_accomulatorsWB_done);
+
+    for (int i = 0; i<50; i++){
+        printf("i=[%d]\n",i);
         // Main thread work before signaling workers to start
-        printf("Main thread is working before waiting for workers\n");
         
-        // Signal worker threads to start work
+        // Signal worker threads to continue
+        //printf("Main thread is ready to continue, broadcasting waiting working threads\n");
         pthread_mutex_lock(&lock_counter_accomulatorsWB_done);
-        flag_start_accomulatorsWB = 1;
-        pthread_cond_broadcast(&cond_start_accomulatorsWB);
+            if (i == 50){
+                flag_stop_accomulatorsWB = 1;
+            }
+        pthread_mutex_unlock(&lock_counter_accomulatorsWB_done);
+        
+        printf((i==50)?  "Main thread is done since i = %d\n" : "Main thread is continuing since i = %d\n", i);
+
+        pthread_mutex_lock(&lock_counter_accomulatorsWB_done);
+            printf("main thread is broadcasting cond_waitfor_main_accomulatorWB");
+            pthread_cond_broadcast(&cond_waitfor_main_accomulatorWB); // Use broadcast to signal all waiting threads
         pthread_mutex_unlock(&lock_counter_accomulatorsWB_done);
 
         // Wait for all worker threads to signal they are done
         pthread_mutex_lock(&lock_counter_accomulatorsWB_done);
-        while (counter_accomulatorsWB_done < num_working_weights_threads){
-            printf("Main thread is waiting on waitforthread\n");
+        while (counter_accomulatorsWB_done < NUM_ACC_THREADS-1){
+            printf("Main thread is waiting on cond_waitfor_accumulatorWB_main\n");
             pthread_cond_wait(&cond_waitfor_accumulatorWB_main, &lock_counter_accomulatorsWB_done);
         }
         pthread_mutex_unlock(&lock_counter_accomulatorsWB_done);
         
-        printf("All worker threads have incremented counter and are waiting on waitformain\n");
+        //printf("All worker threads have incremented counter_local and are waiting on waitformain\n");
         
         pthread_mutex_lock(&lock_counter_accomulatorsWB_done);
-        printf("Main thread is resetting counter and took mutex\n");
-        counter_accomulatorsWB_done = 0; // Reset counter for next iteration
+        printf("Main thread is resetting counter_accomulatorsWB_done to 0\n");
+        counter_accomulatorsWB_done = 0; // Reset for next iteration
         pthread_mutex_unlock(&lock_counter_accomulatorsWB_done);
-        printf("Main thread is done resetting counter and released mutex\n");
-
-
-        // Signal worker threads to continue
-        printf("Main thread is ready to continue, broadcasting waiting working threads\n");
-        if (i == TOTAL_ITERATIONS_SUM){
-            printf("Main thread is done since i is %d\n", i);
-            flag_stop_accomulatorsWB = 1;
-            pthread_cond_broadcast(&cond_waitfor_main_accomulatorWB); // Use broadcast to signal all waiting threads
-            break;
-        }
-        else{
-            pthread_cond_broadcast(&cond_waitfor_main_accomulatorWB); // Use broadcast to signal all waiting threads
-        }
+        //printf("Main thread is done resetting counter_local and released mutex\n");
     }
-    int c = 1;
     // Print weights
     printf("GLOBAL MULTITHREAD");
         for (int i = 1; i < num_layers; i++) { // Start from 1 since weights are between layers
             printf("Weights to Layer %d: \n", i);
             for (int j = 0; j < layers_size[i]; j++) {
                 for (int k = 0; k < layers_size[i-1]; k++) {
-                    printf("W[%d][%d]: %lf ", j, k, global_weights[i][j * layers_size[i-1] + k]);
+                    printf(" W[%d][%d]: %lf ", j, k, global_weights[i][j * layers_size[i-1] + k]);
                 }
                 printf("\n");
             }       
@@ -354,12 +362,12 @@ int main() {
             printf("Weights to Layer %d: \n", i);
             for (int j = 0; j < layers_size[i]; j++) {
                 for (int k = 0; k < layers_size[i-1]; k++) {
-                    printf("W[%d][%d]: %lf ", j, k, global_weights2[i][j * layers_size[i-1] + k]);
+                    printf(" W[%d][%d]: %lf ", j, k, global_weights[i][j * layers_size[i-1] + k]);
                 }
                 printf("\n");
             }       
         }
-    printf("\n%d\n", c);
+
 
 }
     

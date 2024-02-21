@@ -1,11 +1,11 @@
-#ifndef THREADS_H
-#define THREADS_H
+#ifndef THREADS_TRAIN_H
+#define THREADS_TRAIN_H
 
 #include "mlp.h"
 #include "activation_functions.h"
 #include "dataset.h"
 
-typedef struct Thread_args{
+typedef struct Thread_args_train{
     long thread_id;
     MLP* mlp;
     double **my_neuron_activations; //the neuron activations for the samples of the thread (array of pointers (layers) to array of doubles)
@@ -20,8 +20,8 @@ typedef struct Thread_args{
     double learning_rate;
     int num_threads;
     double my_batch_loss;
-}Thread_args;
+}Thread_args_train;
 
-Thread_args* createThreadArgs(MLP *mlp, long thread_id);
+Thread_args_train* createThreadArgs_train(MLP *mlp, long thread_id);
 
-#endif // THREADS_H
+#endif // THREADS_TRAIN_H
