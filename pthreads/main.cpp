@@ -8,11 +8,12 @@
 #include "include/dataset.h"
 #include "include/mlp.h"
 #include "include/threads_train.h"
+#include "include/threads_accomulatorsWB.h"
 
 #define N_FEATURES 8
 #define N_LABELS 1
 #define NUM_THREADS 50
-#define NUM_ACC_THREADS 1
+#define NUM_ACC_THREADS 30
 
 //---------------------train-------------------
 
@@ -195,7 +196,7 @@ void *thread_action_train(void *voidArgs){
 
         //determine the samples of the batch for this thread
         //if it is last thread, it might have less samples, (the same number of other threads if the number of threads is divisor of batch size)
-        int my_number_of_samples = (args->thread_id == NUM_THREADS-1) ? args->batch_size/NUM_THREADS - args->batch_size%NUM_THREADS : args->batch_size/NUM_THREADS;
+        int my_number_of_samples = (args->thread_id == NUM_THREADS-1) ? args->current_batch_size/NUM_THREADS - args->current_batch_size%NUM_THREADS : args->current_batch_size/NUM_THREADS;
 
         int my_start_index = args->batch_start_index + args->thread_id * my_number_of_samples;
         int my_end_index = my_start_index + my_number_of_samples;
@@ -240,11 +241,115 @@ void *thread_action_train(void *voidArgs){
     return NULL;
 }
 
+pthread_cond_t cond_waitfor_main_accomulatorWB = PTHREAD_COND_INITIALIZER;
+pthread_cond_t cond_waitfor_accomulatorWB_main = PTHREAD_COND_INITIALIZER;
+pthread_cond_t cond_waitfor_main_accomulatorWBpause = PTHREAD_COND_INITIALIZER;
+pthread_mutex_t lock_accomulatorWB = PTHREAD_MUTEX_INITIALIZER;
+int counter_accomulatorWB_finished = 0;
+int flag_mainworking_accoumulatorWB = 0;
+int flag_start_accomulatorsWB = 0;
+int flag_stop_accomulatorsWB = 0;
 
-void trainMLP(Data train_dataset, MLP* mlp, int num_epochs, int batch_size, double learning_rate){
+void *diocan(void* voidArgs){
+    Thread_args_accomulatorWB *args = (Thread_args_accomulatorWB*)voidArgs;
+    long thread_id = args->thread_id;
+
+    int counter;
+    int next_layer_flag;
+    while(1){
+
+        //wait until main thread says to start
+        pthread_mutex_lock(&lock_accomulatorWB);
+        while (flag_start_accomulatorsWB == 0){
+            //printf("Thread #%ld waiting on cond_waitfor_main_accomulatorWB because flag_start_accomulatorsWB = 0\n", thread_id);
+            pthread_cond_wait(&cond_waitfor_main_accomulatorWB, &lock_accomulatorWB);
+        }
+        pthread_mutex_unlock(&lock_accomulatorWB);
+        if (flag_stop_accomulatorsWB == 1) break;
+        if (args->start_layer_weight == -1) break; 
+
+        counter = 0;
+        next_layer_flag = 0;
+
+        //start summing the weights from the range of each thread
+        for (int i = args->start_layer_weight; i <= args->num_layers; i++) {
+            //printf("thread[%d] is working on layer[%d]\n",thread_id, i);
+
+            if (i==-1) break;// if it is -1 then it has no weights, which implies no bias and it has to break the loop
+
+            //if the thread changes layer, it has to start from the first weight, otherwise it has to start from its weight range
+            for (int w = (next_layer_flag)? 0 : args->start_weight; w < args->layers_size[i] * args->layers_size[i-1]; w++) {
+                //printf("thread[%d] is working on weight[%d][%d]\n",thread_id, i, w);
+                
+                //if summed all the weights of the thread, it is done
+                if (counter == args->counter_weight_max){
+                    //printf("thread[%d] was joking,\n", thread_id);
+                    break;
+                }
+
+                //sum the weights
+                for (int t = 0; t < NUM_THREADS; t++){
+                    args->weights_global[i][w] += args->thread_args_train[t]->my_grad_weights_accumulators[i][w];
+                    //printf("thread [%d] is summing weight[%d][%d][%d] = %lf\n",thread_id, t, i, w, args->thread_args_train[t]->my_grad_weights_accumulators[i][w]);
+                }
+                counter++;
+                //printf("counter = %d\n", counter);
+            }
+
+            //if it is done, it has to break the loop
+            if (counter == args->counter_weight_max){
+                //printf("thread[%d] is done summing its weights\n", thread_id);
+                    break;
+                }
+            //if it is not done, it has to start from the first weight of the next layer
+            else next_layer_flag = 1;
+        }
+
+        counter = 0;
+        next_layer_flag=0;
+        for (int i = args->start_layer_bias; i <= args->num_layers; i++){
+
+            if (i==-1) break;//if it is done, it has to break the loop
+
+            for (int b = (next_layer_flag)? 0 : args->start_bias; b<args->layers_size[i]; b++){
+                //printf("thread[%d] is working on bias[%d][%d]\n",thread_id, i, b);
+                //if summed all the weights of the thread, it is done
+                if (counter == args->counter_bias_max){
+                    //printf("thread[%d] was joking,\n", thread_id);
+                    break;
+                }
+
+                //sum the biases
+                for (int t = 0; t < NUM_THREADS; t++){
+                    args->biases_global[i][b] += args->thread_args_train[t]->my_grad_biases_accumulator[i][b];
+                    //printf("thread [%d] is summing bias[%d][%d][%d] = %lf\n",thread_id, t, i, b, args->thread_args_train[t]->my_grad_biases_accumulator[i][b]);
+                }
+                counter++;
+                //printf("counter = %d\n", counter); 
+            }
+            //if it is done, it has to break the loop
+            if (counter == args->counter_weight_max){
+                //printf("thread[%d] is done\n", thread_id);
+                    break;
+            }
+            else next_layer_flag = 1;
+        }
+
+        pthread_mutex_lock(&lock_accomulatorWB);
+        counter_accomulatorWB_finished++;//incrase the counter and in case of the last thread, signal the main
+        if (counter_accomulatorWB_finished == args->num_working_threads) pthread_cond_signal(&cond_waitfor_accomulatorWB_main);
+            // printf("thread #%d waits on cond_waitfor_main_accomulatorWBpause because increases counter to %d\n", thread_id, counter_accomulatorWB_finished);
+            pthread_cond_wait(&cond_waitfor_main_accomulatorWBpause, &lock_accomulatorWB);
+            pthread_mutex_unlock(&lock_accomulatorWB);
+    }
+    return NULL;
+}
+
+
+void trainMLP(Data train_dataset, MLP* mlp, int num_epochs, int default_batch_size, double learning_rate){
     
     //initialize thread data structures
-    pthread_t threads[NUM_THREADS]; //thread identifier
+    pthread_t threads[NUM_THREADS+NUM_ACC_THREADS]; //thread identifier
     Thread_args_train* thread_args_train[NUM_THREADS]; // array of thread data, one specific for thread
 
     // thread independent accomulator of gradient weights for a batch, it is gonna be resetted every batch
@@ -256,8 +361,10 @@ void trainMLP(Data train_dataset, MLP* mlp, int num_epochs, int batch_size, doub
     // an array of pointers (layers) that points to an array of doubles (the bias gradients)
     //[layer][neuron]
     double **grad_biases_accumulator = (double **)malloc((mlp->num_layers) * sizeof(double *));
-
-
+    for (int i = 1; i<mlp->num_layers; i++){
+                    grad_weights_accumulators[i] = (double *)calloc(mlp->layers_sizes[i] * mlp->layers_sizes[i-1], sizeof(double));
+                    grad_biases_accumulator[i] = (double *)calloc(mlp->layers_sizes[i], sizeof(double));    
+                }
 
     //Initializes the variables that are persistent in the epochs or data stractures that keep the same shape
     for(long thread_id=0; thread_id < NUM_THREADS; thread_id++){
@@ -265,42 +372,42 @@ void trainMLP(Data train_dataset, MLP* mlp, int num_epochs, int batch_size, doub
         thread_args_train[thread_id]->dataset = &train_dataset;
         pthread_create(&threads[thread_id], NULL,  thread_action_train, (void *)thread_args_train[thread_id]);
     }
+    //initialize accomulatorWB threads data structure
+    Thread_args_accomulatorWB thread_args_accomulatorWB[NUM_ACC_THREADS];
+    int num_working_weights_threads = createThreadArgs_accomulatorWB(NUM_ACC_THREADS, thread_args_accomulatorWB, mlp, thread_args_train, grad_weights_accumulators, grad_biases_accumulator);
+    //the logical identifier of accomulatorWB threads starts from NUM_threads but we have to pass the right  thread_args_accomulatorWB
+    for (long thread_id = NUM_THREADS; thread_id < NUM_ACC_THREADS + NUM_THREADS; thread_id++){
+        pthread_create(&threads[thread_id], NULL,  diocan, (void *)&thread_args_accomulatorWB[thread_id - NUM_THREADS]);
+    }
+    // pause();
 
+    int batch_start_index;
     int current_batch_size;
-    
-    //double batch_loss;
-    //train_dataset.size = 2; //tmp (specify the number of sample to try)
-    //for each epoch
     for (int epoch = 0; epoch < num_epochs; epoch++) {
             shuffleDataset(&(train_dataset.samples), &(train_dataset.targets), train_dataset.size);
             printf("epoch %d: \n", epoch);
             double epoch_loss = 0.0; //accomulator of loss over a single epoch
 
             // iterate through the dataset in batches
-        
-        for (int batch_start_index = 0; batch_start_index < train_dataset.size; batch_start_index += batch_size) { 
+
+        // while(batch_start_index < train_dataset.size){}
+        for (int batch_start_index = 0; batch_start_index < train_dataset.size; batch_start_index += default_batch_size) { 
             //printData(train_dataset);
             //the size of the ith batch.
             
-            //current_batch_size =  (batch_start_index + batch_size > train_dataset.size) ? (train_dataset.size - batch_start_index) :  batch_size;
-            if(batch_start_index + batch_size > train_dataset.size){
+            //current_batch_size =  (batch_start_index + default_batch_size > train_dataset.size) ? (train_dataset.size - batch_start_index) :  default_batch_size;
+            if(batch_start_index + default_batch_size > train_dataset.size){
                 current_batch_size = train_dataset.size - batch_start_index;
             }
             else{
-                current_batch_size = batch_size;
+                current_batch_size = default_batch_size;
             }
             //printf("current_batch_size = %d\n", current_batch_size);
-
-            for (int i = 1; i<mlp->num_layers; i++){
-                    grad_weights_accumulators[i] = (double *)calloc(mlp->layers_sizes[i] * mlp->layers_sizes[i-1], sizeof(double));
-                    grad_biases_accumulator[i] = (double *)calloc(mlp->layers_sizes[i], sizeof(double));    
-                }
 
 
             // initializing data structures of threads that are dependent on the batch
             for (long thread_id = 0; thread_id < NUM_THREADS; ++thread_id) {
-                
-                thread_args_train[thread_id]->batch_size = current_batch_size;
+                thread_args_train[thread_id]->current_batch_size = current_batch_size;
                 thread_args_train[thread_id]->batch_start_index = batch_start_index;
                 //starting the threads
             }
@@ -328,27 +435,59 @@ void trainMLP(Data train_dataset, MLP* mlp, int num_epochs, int batch_size, doub
             pthread_mutex_unlock(&counter_lock);
             //printf("Main thread is done resetting global_counter_train and released mutex\n");
 
-            // printf("batch start index + batch size = %d\n", batch_start_index + batch_size);
+            // printf("batch start index + batch size = %d\n", batch_start_index + current_batch_size);
             // printf("talking about batch %d/%d, batch size: %d\n", batch_start_index,train_dataset.size, current_batch_size);
             //printf("summing accomulators");
             //sum the accumulators of all the threads (this should be parralelized)
             for (int thread_id = 0; thread_id < NUM_THREADS; thread_id++){
                 //summing batch loss
                 epoch_loss += thread_args_train[thread_id]->my_batch_loss;
-                for (int i = 1; i < mlp->num_layers; i++) {
-                    // loop trough each neuron of the layer
-                    for (int j = 0; j < mlp->layers_sizes[i]; j++) {
-                        //summing biases accomulators
-                        grad_biases_accumulator[i][j] += thread_args_train[thread_id]->my_grad_biases_accumulator[i][j];
-                        // printf("[%d]my_grad_biases_accumulator[%d][%d] = %f\n",thread_id, i, j, thread_args_train[thread_id]->my_grad_biases_accumulator[i][j]);
-                        for (int k = 0; k < mlp->layers_sizes[i-1]; k++) {
-                            //summing weights accomulators
-                            grad_weights_accumulators[i][j * mlp->layers_sizes[i-1] + k] += thread_args_train[thread_id]->my_grad_weights_accumulators[i][j * mlp->layers_sizes[i-1] + k];
-                            // printf("[%d]my_grad_weights_accumulators[%d][%d] = %f\n",thread_id, i, j * mlp->layers_sizes[i-1] + k, thread_args_train[thread_id]->my_grad_weights_accumulators[i][j * mlp->layers_sizes[i-1] + k]);
-                        }
-                    }
-                }
+                // for (int i = 1; i < mlp->num_layers; i++) {
+                //     // loop trough each neuron of the layer
+                //     for (int j = 0; j < mlp->layers_sizes[i]; j++) {
+                //         //summing biases accomulators
+                //         grad_biases_accumulator[i][j] += thread_args_train[thread_id]->my_grad_biases_accumulator[i][j];
+                //         // printf("[%d]my_grad_biases_accumulator[%d][%d] = %f\n",thread_id, i, j, thread_args_train[thread_id]->my_grad_biases_accumulator[i][j]);
+                //         for (int k = 0; k < mlp->layers_sizes[i-1]; k++) {
+                //             //summing weights accomulators
+                //             grad_weights_accumulators[i][j * mlp->layers_sizes[i-1] + k] += thread_args_train[thread_id]->my_grad_weights_accumulators[i][j * mlp->layers_sizes[i-1] + k];
+                //             // printf("[%d]my_grad_weights_accumulators[%d][%d] = %f\n",thread_id, i, j * mlp->layers_sizes[i-1] + k, thread_args_train[thread_id]->my_grad_weights_accumulators[i][j * mlp->layers_sizes[i-1] + k]);
+                //         }
+                //     }
+                // }
             }
+
+            pthread_mutex_lock(&lock_accomulatorWB);
+            //start threads
+            //printf("main set flag_start_accomulatorsWB to 1\n");
+            flag_start_accomulatorsWB = 1;
+            // printf("main sets flag_mainworking_accoumulatorWB to 0\n");
+            // printf("main signal threads waiting on cond_waitfor_main_accomulatorWB\n");
+            flag_mainworking_accoumulatorWB = 0;
+            pthread_cond_broadcast(&cond_waitfor_main_accomulatorWB);
+            pthread_mutex_unlock(&lock_accomulatorWB);
+
+            //------pause main thread until all threads finish
+            pthread_mutex_lock(&lock_accomulatorWB);
+            while (counter_accomulatorWB_finished < num_working_weights_threads){
+                // printf("Main waiting on cond_waitfor_accomulatorWB_main because counter_accomulatorWB_finished = %d\n", counter_accomulatorWB_finished);
+                pthread_cond_wait(&cond_waitfor_accomulatorWB_main, &lock_accomulatorWB);
+            }
+            pthread_mutex_unlock(&lock_accomulatorWB);
+            pthread_mutex_lock(&lock_accomulatorWB);
+            // printf("all threads finished and waiting on cond_waitfor_main_accomulatorWBpause\n");
+            // printf("Main resumes because all threads finished\n");
+            // printf("main sets flag_mainworking_accoumulatorWB to 1\n");
+            // printf("main sets flag_start_accomulatorsWB to 0\n");
+            // printf("main sets counter_accomulatorWB_finished to 0\n");
+            counter_accomulatorWB_finished = 0;//resetting the counter of finished accomulators
+            flag_start_accomulatorsWB = 0; // pause accomulatorsWB 
+            flag_mainworking_accoumulatorWB = 1;
+            // printf("main thread signals threads waiting on cond_waitfor_main_accomulatorWBpause\n");
+            pthread_cond_broadcast(&cond_waitfor_main_accomulatorWBpause);
+            pthread_mutex_unlock(&lock_accomulatorWB);
+
+
 
             // Apply mean gradients to update weights and biases
             for (int i = 1; i < mlp->num_layers; i++) {
@@ -361,7 +500,7 @@ void trainMLP(Data train_dataset, MLP* mlp, int num_epochs, int batch_size, doub
                     // printf("mlp->biases[%d][%d] = %f\n", i, j, mlp->biases[i][j]);
                     for (int k = 0; k < mlp->layers_sizes[i-1]; k++) {
                         //calcuate mean gradient for weights and update
-                        // printf("grad_weights_accumulators[%d][%d] = %f\n", i, j * mlp->layers_sizes[i-1] + k, grad_weights_accumulators[i][j * mlp->layers_sizes[i-1] + k]/batch_size);
+                        // printf("grad_weights_accumulators[%d][%d] = %f\n", i, j * mlp->layers_sizes[i-1] + k, grad_weights_accumulators[i][j * mlp->layers_sizes[i-1] + k]/current_batch_size);
                         // printf("mlp->weights[%d][%d] = %f\n", i, j * mlp->layers_sizes[i-1] + k, mlp->weights[i][j * mlp->layers_sizes[i-1] + k]);
                         mlp->weights[i][j * mlp->layers_sizes[i-1] + k] += learning_rate * (grad_weights_accumulators[i][j * mlp->layers_sizes[i-1] + k] / current_batch_size);
                         // printf("mlp->weights[%d][%d] = %f\n", i, j * mlp->layers_sizes[i-1] + k, mlp->weights[i][j * mlp->layers_sizes[i-1] + k]);
@@ -373,10 +512,15 @@ void trainMLP(Data train_dataset, MLP* mlp, int num_epochs, int batch_size, doub
                 //next layer
             }
             //printf("Main thread is ready to continue, broadcasting waiting working threads\n");
-            if (batch_start_index + batch_size > train_dataset.size && epoch == num_epochs-1){
+            if (batch_start_index + default_batch_size > train_dataset.size && epoch == num_epochs-1){
                 //printf("Main thread is done\n");
                 flag_stop_train = 1;
                 pthread_cond_broadcast(&cond_waitfor_main_train); // Use broadcast to signal all waiting threads
+                pthread_mutex_lock(&lock_accomulatorWB);
+                flag_stop_accomulatorsWB = 1;
+                flag_start_accomulatorsWB = 1; //to make htem go out of the loop
+                pthread_cond_broadcast(&cond_waitfor_main_accomulatorWB);
+                pthread_mutex_unlock(&lock_accomulatorWB);
                 break;
             }
             else{
@@ -402,13 +546,13 @@ void *thread_action_evaluation(void *voidArgs){
     Thread_args_train *args = (Thread_args_train *)voidArgs;//casting the correct type to args
 
     //if it is last thread, it might have less samples, (the same number of other threads if the number of threads is divisor of batch size)
-    int my_number_of_samples = (args->thread_id == NUM_THREADS-1) ? args->batch_size/NUM_THREADS - args->batch_size%NUM_THREADS : args->batch_size/NUM_THREADS;
+    int my_number_of_samples = (args->thread_id == NUM_THREADS-1) ? args->current_batch_size/NUM_THREADS - args->current_batch_size%NUM_THREADS : args->current_batch_size/NUM_THREADS;
     //printf("[%d]my_number_of_samples = %d\n",args->thread_id, my_number_of_samples);
-    //int my_number_of_samples = args->batch_size/NUM_THREADS; //with one thread
-    //printf("[%d] i have %d samples, in particular from %d to %d, batch size = %d --- batch start index = %d \n", args->thread_id, my_number_of_samples, args->batch_start_index + args->thread_id * my_number_of_samples, args->batch_start_index + args->thread_id * my_number_of_samples + my_number_of_samples, args->batch_size, args->batch_start_index);
+    //int my_number_of_samples = args->current_batch_size/NUM_THREADS; //with one thread
+    //printf("[%d] i have %d samples, in particular from %d to %d, batch size = %d --- batch start index = %d \n", args->thread_id, my_number_of_samples, args->batch_start_index + args->thread_id * my_number_of_samples, args->batch_start_index + args->thread_id * my_number_of_samples + my_number_of_samples, args->current_batch_size, args->batch_start_index);
     int my_start_index = args->batch_start_index + args->thread_id * my_number_of_samples;
     int my_end_index = my_start_index + my_number_of_samples;
-    //printf("[%d] i have %d samples, in particular from %d to %d, batch size = %d --- batch start index = %d \n", args->thread_id, my_number_of_samples, my_start_index, my_end_index, args->batch_size, args->batch_start_index);
+    //printf("[%d] i have %d samples, in particular from %d to %d, batch size = %d --- batch start index = %d \n", args->thread_id, my_number_of_samples, my_start_index, my_end_index, args->current_batch_size, args->batch_start_index);
 
     for (int sample_i = my_start_index; sample_i<my_end_index; sample_i++) {
         //set sample_i features as neuron activation of first layer
@@ -434,22 +578,22 @@ void *thread_action_evaluation(void *voidArgs){
 
 double evaluateMLP(MLP *mlp, Data test_data, ActivationFunction act) {
     double total_error = 0.0;
-    printf("STARTING EVALUATION: test_data.size = %d\n", test_data.size);
+    //printf("STARTING EVALUATION: test_data.size = %d\n", test_data.size);
     //threads will split the train dataset and each compute their samples
     pthread_t threads[NUM_THREADS]; //thread identifier
     Thread_args_train* thread_args_evaluate[NUM_THREADS]; // array of thread data, one specific for thread
 
     for(long thread_id=0; thread_id < NUM_THREADS; thread_id++){
-        printf("creating thread %d\n", thread_id);
+        //printf("creating thread %d\n", thread_id);
         thread_args_evaluate[thread_id] = createThreadArgs_train(mlp,thread_id); 
         thread_args_evaluate[thread_id]->dataset = &test_data;
 
         //the threads think the whole train dataset is a batch, so they will split it evenly
-        thread_args_evaluate[thread_id]->batch_size = test_data.size;
+        thread_args_evaluate[thread_id]->current_batch_size = test_data.size;
         thread_args_evaluate[thread_id]->batch_start_index = 0;
-        printf("thread_args_evaluate[%d]->batch_size = %d\n", thread_id, thread_args_evaluate[thread_id]->batch_size);
+        //printf("thread_args_evaluate[%d]->current_batch_size = %d\n", thread_id, thread_args_evaluate[thread_id]->current_batch_size);
         pthread_create(&threads[thread_id], NULL,  thread_action_evaluation, (void *)thread_args_evaluate[thread_id]);
-        printf("thread %d created\n", thread_id);
+        //printf("thread %d created\n", thread_id);
     }
 
     for(long thread_id = 0; thread_id < NUM_THREADS; thread_id++){
@@ -461,7 +605,7 @@ double evaluateMLP(MLP *mlp, Data test_data, ActivationFunction act) {
     }
 
     // Return average MSE over the test set
-    printf("total_error = %f\n", total_error);
+    //printf("total_error = %f\n", total_error);
     return total_error / (test_data.size * mlp->layers_sizes[mlp->num_layers-1]);
 }
 //-------------------------------end evaluation------------------------
@@ -495,10 +639,10 @@ int main(int argc, char *argv[]){
     int layers_size[] = {N_FEATURES, 5, 2, N_LABELS}; 
     MLP *mlp = createMLP(num_layers, layers_size);
     if (!mlp) return 1;
-    printMLP(mlp);
+    //printMLP(mlp);
     // Define learning parameters
     double learning_rate = 0.01;
-    int num_epochs = 6000;
+    int num_epochs = 5000;
     int batch_size = 4000; // Adjust based on your dataset size and memory constraints
     if (batch_size < NUM_THREADS){
         printf("Impossible to start the program, batch_size[%d] < num_thread[%d]", batch_size, NUM_THREADS);

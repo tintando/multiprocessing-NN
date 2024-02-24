@@ -10,7 +10,7 @@ typedef struct Thread_args_train{
     double **my_grad_weights_accumulators; //array of pointers (layer) to array of doubles (linearized 2d matrix of grad_weights)
     double **my_grad_biases_accumulator; //array of pointers(layer) to array of doubles
     int batch_start_index;
-    int batch_size;
+    int current_batch_size;
     Data* dataset; // pointer to the dataset 
     ActivationFunction act;
     ActivationFunctionDerivative dact;
@@ -19,7 +19,7 @@ typedef struct Thread_args_train{
     double my_batch_loss;
 }Thread_args_train;
 
-void printThreadArgs_train(const Thread_args_train* args) {
+void printThreadArgs_train(Thread_args_train* args) {
     // Since thread_id is part of the args, we use it directly in the print statements.
     //if (args->thread_id!=2) return;
     printf("[%d] Thread ID: %d\n", args->thread_id, args->thread_id);
@@ -68,7 +68,7 @@ void printThreadArgs_train(const Thread_args_train* args) {
     }
 
     printf("[%d] Batch Start Index: %d\n", args->thread_id, args->batch_start_index);
-    printf("[%d] Batch Size: %d\n", args->thread_id, args->batch_size);
+    printf("[%d] Batch Size: %d\n", args->thread_id, args->current_batch_size);
     printf("[%d] Dataset Pointer: %p\n", args->thread_id, (void*)args->dataset);
     printf("[%d] Learning Rate: %lf\n", args->thread_id, args->learning_rate);
     printf("[%d] Number of Threads: %d\n", args->thread_id, args->num_threads);
