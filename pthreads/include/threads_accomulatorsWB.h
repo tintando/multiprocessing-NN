@@ -11,7 +11,6 @@
 
 typedef struct {
     Thread_args_train **thread_args_train;
-    MLP* mlp;
     long thread_id;
     double** weights_global; //pointer to list of weights of main thread (pointer to an array of pointers(layer) to an array of weights)
     int start_layer_weight; 
@@ -21,6 +20,8 @@ typedef struct {
     int start_layer_bias;
     int start_bias;
     int counter_bias_max;
+    int num_layers; 
+    int* layers_size; //pointer to array of pointers(layer) to layers sizes
     int num_working_threads; //how many working threads there are (if there are more threads than wights in the NN)
 } Thread_args_accomulatorWB;
 

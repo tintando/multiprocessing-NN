@@ -9,8 +9,6 @@
 typedef struct {
     Thread_args_train **thread_args_train;
     long thread_id;
-    MLP *mlp;
-    double learning_rate;
     double** weights_global; //pointer to list of weights of main thread (pointer to an array of pointers(layer) to an array of weights)
     int start_layer_weight; 
     int start_weight;
@@ -19,6 +17,8 @@ typedef struct {
     int start_layer_bias;
     int start_bias;
     int counter_bias_max;
+    int num_layers; 
+    int* layers_size; //pointer to array of pointers(layer) to layers sizes
     int num_working_threads; //how many working threads there are (if there are more threads than wights in the NN)
 } Thread_args_accomulatorWB;
 
@@ -48,11 +48,11 @@ void printThreadArgs_accomulatorWB(Thread_args_accomulatorWB* thread_args_accomu
         printf("thread %d, counter_bias_max = %d\n", i, thread_args_accomulatorWB[i].counter_bias_max);
     }
     for (int i = 0; i < NUM_ACC_THREADS; i++){
-        printf("thread %d, num_layers = %d\n", i, thread_args_accomulatorWB[i].mlp->num_layers);
+        printf("thread %d, num_layers = %d\n", i, thread_args_accomulatorWB[i].num_layers);
     }
     for (int i = 0; i < NUM_ACC_THREADS; i++){
-        for (int j = 0; j < thread_args_accomulatorWB[i].mlp->num_layers; j++){
-            printf("thread %d, layers_size[%d] = %d\n", i, j, thread_args_accomulatorWB[i].mlp->layers_sizes[j]);
+        for (int j = 0; j < thread_args_accomulatorWB[i].num_layers; j++){
+            printf("thread %d, layers_size[%d] = %d\n", i, j, thread_args_accomulatorWB[i].layers_size[j]);
         }
     }
     for (int i = 0; i < NUM_ACC_THREADS; i++){
@@ -155,7 +155,8 @@ int createThreadArgs_accomulatorWB(int NUM_ACC_THREADS, Thread_args_accomulatorW
 
 //------------syncronize accomulator threads with feedforward and backpropagation threads----------------
     for (int i = 0; i < NUM_ACC_THREADS; i++){
-        thread_args_accomulatorWB[i].mlp = mlp;
+        thread_args_accomulatorWB[i].layers_size = mlp->layers_sizes;
+        thread_args_accomulatorWB[i].num_layers = mlp->num_layers;
         thread_args_accomulatorWB[i].thread_id = i; //the logical id of the thread
         thread_args_accomulatorWB[i].thread_args_train = thread_args_train; //the pointer of the list of pointers to the backpropagation and feedforward threads
         thread_args_accomulatorWB[i].weights_global = grad_weights_accumulators; //the pointer to the list of weights of the main thread

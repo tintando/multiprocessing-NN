@@ -272,13 +272,13 @@ void *diocan(void* voidArgs){
         next_layer_flag = 0;
 
         //start summing the weights from the range of each thread
-        for (int i = args->start_layer_weight; i <= args->mlp->num_layers; i++) {
+        for (int i = args->start_layer_weight; i <= args->num_layers; i++) {
             //printf("thread[%d] is working on layer[%d]\n",thread_id, i);
 
             if (i==-1) break;// if it is -1 then it has no weights, which implies no bias and it has to break the loop
 
             //if the thread changes layer, it has to start from the first weight, otherwise it has to start from its weight range
-            for (int w = (next_layer_flag)? 0 : args->start_weight; w < args->mlp->layers_sizes[i] * args->mlp->layers_sizes[i-1]; w++) {
+            for (int w = (next_layer_flag)? 0 : args->start_weight; w < args->layers_size[i] * args->layers_size[i-1]; w++) {
                 //printf("thread[%d] is working on weight[%d][%d]\n",thread_id, i, w);
                 
                 //if summed all the weights of the thread, it is done
@@ -307,11 +307,11 @@ void *diocan(void* voidArgs){
 
         counter = 0;
         next_layer_flag=0;
-        for (int i = args->start_layer_bias; i <= args->mlp->num_layers; i++){
+        for (int i = args->start_layer_bias; i <= args->num_layers; i++){
 
             if (i==-1) break;//if it is done, it has to break the loop
 
-            for (int b = (next_layer_flag)? 0 : args->start_bias; b<args->mlp->layers_sizes[i]; b++){
+            for (int b = (next_layer_flag)? 0 : args->start_bias; b<args->layers_size[i]; b++){
                 //printf("thread[%d] is working on bias[%d][%d]\n",thread_id, i, b);
                 //if summed all the weights of the thread, it is done
                 if (counter == args->counter_bias_max){
