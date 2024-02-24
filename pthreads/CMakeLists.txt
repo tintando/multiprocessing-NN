@@ -13,11 +13,12 @@ find_package(Threads REQUIRED)
 
 # Add your source files here
 set(SOURCES
-    main.cpp
-    src/threads_train.cpp
     src/activation_functions.cpp
-    src/mlp.cpp
     src/dataset.cpp
+    src/mlp.cpp
+    main.cpp
+    src/threads_accomulatorsWB.cpp
+    src/threads_train.cpp
 )
 
 add_executable(multithread ${SOURCES})

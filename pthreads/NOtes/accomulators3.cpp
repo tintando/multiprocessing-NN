@@ -12,18 +12,18 @@
                = weight between a node of the current layer and a node of previous layer
 */
 
-#define NUM_THREADS 30
-#define NUM_ACC_THREADS 60
-#define TOTAL_ITERATIONS_SUM 100
+#define NUM_THREADS 3
+#define NUM_ACC_THREADS 10000
+#define TOTAL_ITERATIONS_SUM 1000
 
-pthread_cond_t cond_waitfor_accumulatorWB_main = PTHREAD_COND_INITIALIZER;
-pthread_cond_t cond_start_accomulatorsWB = PTHREAD_COND_INITIALIZER; // Condition variable to signal start of work
-pthread_cond_t cond_waitfor_main_accomulatorWB = PTHREAD_COND_INITIALIZER; //condition variable to signal the threads that main thread is ready to make them continue
-pthread_mutex_t lock_counter_accomulatorsWB_done = PTHREAD_MUTEX_INITIALIZER;
-int counter_accomulatorsWB_done = 0;
-int flag_start_accomulatorsWB = 0; // Flag to indicate workers can start
-int flag_stop_accomulatorsWB = 0; // Flag to indicate workers should stop
-
+pthread_cond_t cond_waitfor_main_accomulatorWB = PTHREAD_COND_INITIALIZER;
+pthread_cond_t cond_waitfor_accomulatorWB_main = PTHREAD_COND_INITIALIZER;
+pthread_cond_t cond_waitfor_main_accomulatorWBpause = PTHREAD_COND_INITIALIZER;
+pthread_mutex_t lock_accomulatorWB = PTHREAD_MUTEX_INITIALIZER;
+int counter_accomulatorWB_finished = 0;
+int flag_mainworking_accoumulatorWB = 0;
+int flag_start_accomulatorsWB = 0;
+int flag_stop_accomulatorsWB = 0;
 
 typedef struct {
     long thread_id;
@@ -74,27 +74,35 @@ double*** createWeights(int num_layers, int* layers_size) {
     Thread_args_accomulator *args = (Thread_args_accomulator*)voidArgs;
     long thread_id = args->thread_id;
     printf("[%d] starts from layer %d\n", thread_id, args->start_layer_weight);
-
-    
-    //wait until main thread says to start
-    pthread_mutex_lock(&lock_counter_accomulatorsWB_done);
-    while (!flag_start_accomulatorsWB) { // Wait until start_flag is set
-        printf("thread[%d] is sleeping on cond_start_accomulatorsWB\n", args->thread_id);
-        pthread_cond_wait(&cond_start_accomulatorsWB, &lock_counter_accomulatorsWB_done);
-    }
-    pthread_mutex_unlock(&lock_counter_accomulatorsWB_done);
+    if (args->start_layer_weight == -1) return NULL;
 
     int counter;
     int next_layer_flag;
 
-    while(!flag_stop_accomulatorsWB){
+    // pthread_mutex_lock(&lock_accomulatorWB);
+    //     while(flag_start_accomulatorsWB == 0){
+    //         printf("Thread #%ld waiting for main to start\n", thread_id);
+    //         pthread_cond_wait(&cond_waitfor_main_accomulatorWB, &lock_accomulatorWB);
+    //     }
+    // pthread_mutex_unlock(&lock_accomulatorWB);
+
+    while(1){
+
+        //wait until main thread says to start
+        pthread_mutex_lock(&lock_accomulatorWB);
+        while (flag_start_accomulatorsWB == 0){
+            printf("Thread #%ld waiting on cond_waitfor_main_accomulatorWB because flag_start_accomulatorsWB = 0\n", thread_id);
+            pthread_cond_wait(&cond_waitfor_main_accomulatorWB, &lock_accomulatorWB);
+        }
+        pthread_mutex_unlock(&lock_accomulatorWB);
+        if (flag_stop_accomulatorsWB == 1) break;
 
         counter = 0;
-        next_layer_flag;
+        next_layer_flag=0;
 
-        //start summing the weights from the range of each thread
+        //thread work
         for (int i = args->start_layer_weight; i <= args->num_layers; i++) {
-            printf("thread[%d] is working on layer[%d]\n",thread_id, i);
+            //printf("thread[%d] is working on layer[%d]\n",thread_id, i);
 
             if (i==-1) {printf("thread[%d] is done because it starts weights from -1\n", thread_id); break;}//if it is done, it has to break the loop
 
@@ -104,17 +112,17 @@ double*** createWeights(int num_layers, int* layers_size) {
                 
                 //if summed all the weights of the thread, it is done
                 if (counter == args->weight_counter_max){
-                    printf("thread[%d] was joking,\n", thread_id);
+                    //printf("thread[%d] was joking,\n", thread_id);
                     break;
                 }
 
                 //sum the weights
                 for (int t = 0; t < NUM_THREADS; t++){
                     (*args->weights_global)[i][w] += (*args->weights_threads)[t][i][w];
-                    printf("thread [%d] is summing weight[%d][%d][%d] = %lf\n",thread_id, t, i, w, (*args->weights_threads)[t][i][w]);
+                    //printf("thread [%d] is summing weight[%d][%d][%d] = %lf\n",thread_id, t, i, w, (*args->weights_threads)[t][i][w]);
                 }
                 counter++;
-                printf("counter = %d\n", counter);
+                //printf("counter = %d\n", counter);
             }
 
             //if it is done, it has to break the loop
@@ -125,22 +133,16 @@ double*** createWeights(int num_layers, int* layers_size) {
             //if it is not done, it has to start from the first weight of the next layer
             else next_layer_flag = 1;
         }
-        if (args->start_layer_weight == -1) break;
-        //accomulated my weights
-        printf("accomulated my weights\n");
+        
+        pthread_mutex_lock(&lock_accomulatorWB);
+        counter_accomulatorWB_finished++;//incrase the counter and in case of the last thread, signal the main
+        if (counter_accomulatorWB_finished == args->num_working_threads) {pthread_cond_signal(&cond_waitfor_accomulatorWB_main); printf("Thread #%ld signals main\n", thread_id);}
+        printf("thread #%d waits on cond_waitfor_main_accomulatorWBpause because increases counter to %d\n", thread_id, counter_accomulatorWB_finished);
+        pthread_cond_wait(&cond_waitfor_main_accomulatorWBpause, &lock_accomulatorWB);
+        pthread_mutex_unlock(&lock_accomulatorWB);
+        //
 
-        // Signal main thread that this worker is done
-        pthread_mutex_lock(&lock_counter_accomulatorsWB_done);
-        printf("Thread %ld is incrementing counter and took mutex, counter = %d\n", args->thread_id, counter_accomulatorsWB_done+1);
-        counter_accomulatorsWB_done++;
-        if (counter_accomulatorsWB_done == args->num_working_threads){
-            printf("Thread %ld is signaling waitforthread, and released mutex\n", args->thread_id);
-            pthread_cond_signal(&cond_waitfor_accumulatorWB_main);
-        }
-        //wait for main thread to signal that it is ready to continue
-        printf("Thread %ld is waiting on waitformain and released mutex\n", args->thread_id);
-        pthread_cond_wait(&cond_waitfor_main_accomulatorWB, &lock_counter_accomulatorsWB_done);
-        pthread_mutex_unlock(&lock_counter_accomulatorsWB_done);
+
     }
     if (args->start_layer_weight == -1) printf("thread[%d] is done because layer is -1\n", thread_id);
     return NULL;
@@ -289,53 +291,68 @@ int main() {
         thread_args_accomulatorWB[t].thread_id = t;
         thread_args_accomulatorWB[t].weights_threads = &weights;
         thread_args_accomulatorWB[t].weights_global = &global_weights;
-        accessWeights(thread_args_accomulatorWB[t].weights_threads);
         thread_args_accomulatorWB[t].num_layers = num_layers;
         thread_args_accomulatorWB[t].layers_size = &layers_size;
         pthread_create(&threads[t], NULL, thread_function, (void*)&(thread_args_accomulatorWB[t]));
     }
     int i = 0;
+    flag_mainworking_accoumulatorWB = 1;
+    printf("num_working_weights_threads = %d\n", num_working_weights_threads);
+
     while(1){
-        i++;
-        printf("iteration %d\n", i);
-        // Main thread work before signaling workers to start
-        printf("Main thread is working before waiting for workers\n");
-        
-        // Signal worker threads to start work
-        pthread_mutex_lock(&lock_counter_accomulatorsWB_done);
+ //-------------------work
+        printf("-\n-\n-\n-\n");
+        printf("Main working\n");
+        printf("-\n-\n-\n-\n"); 
+        sleep(0);
+        //------------------------------------------------
+        pthread_mutex_lock(&lock_accomulatorWB);
+        //start threads
+        printf("main set flag_start_accomulatorsWB to 1\n");
         flag_start_accomulatorsWB = 1;
-        pthread_cond_broadcast(&cond_start_accomulatorsWB);
-        pthread_mutex_unlock(&lock_counter_accomulatorsWB_done);
+        printf("main sets flag_mainworking_accoumulatorWB to 0\n");
+        printf("main signal threads waiting on cond_waitfor_main_accomulatorWB\n");
+        flag_mainworking_accoumulatorWB = 0;
+        pthread_cond_broadcast(&cond_waitfor_main_accomulatorWB);
+        pthread_mutex_unlock(&lock_accomulatorWB);
 
-        // Wait for all worker threads to signal they are done
-        pthread_mutex_lock(&lock_counter_accomulatorsWB_done);
-        while (counter_accomulatorsWB_done < num_working_weights_threads){
-            printf("Main thread is waiting on waitforthread\n");
-            pthread_cond_wait(&cond_waitfor_accumulatorWB_main, &lock_counter_accomulatorsWB_done);
+        //------pause main thread until all threads finish
+        pthread_mutex_lock(&lock_accomulatorWB);
+        while (counter_accomulatorWB_finished < num_working_weights_threads){
+            printf("Main waiting on cond_waitfor_accomulatorWB_main because counter_accomulatorWB_finished = %d\n", counter_accomulatorWB_finished);
+            pthread_cond_wait(&cond_waitfor_accomulatorWB_main, &lock_accomulatorWB);
         }
-        pthread_mutex_unlock(&lock_counter_accomulatorsWB_done);
+        pthread_mutex_unlock(&lock_accomulatorWB);
+        pthread_mutex_lock(&lock_accomulatorWB);
+        printf("all threads finished and waiting on cond_waitfor_main_accomulatorWBpause\n");
+        printf("Main resumes because all threads finished\n");
+        printf("main sets flag_mainworking_accoumulatorWB to 1\n");
+        printf("main sets flag_start_accomulatorsWB to 0\n");
+        printf("main sets counter_accomulatorWB_finished to 0\n");
+        counter_accomulatorWB_finished = 0;//resetting the counter of finished accomulators
+        flag_start_accomulatorsWB = 0; // pause accomulatorsWB 
+        flag_mainworking_accoumulatorWB = 1;
+        printf("main thread signals threads waiting on cond_waitfor_main_accomulatorWBpause\n");
+        pthread_cond_broadcast(&cond_waitfor_main_accomulatorWBpause);
+        pthread_mutex_unlock(&lock_accomulatorWB);
         
-        printf("All worker threads have incremented counter and are waiting on waitformain\n");
         
-        pthread_mutex_lock(&lock_counter_accomulatorsWB_done);
-        printf("Main thread is resetting counter and took mutex\n");
-        counter_accomulatorsWB_done = 0; // Reset counter for next iteration
-        pthread_mutex_unlock(&lock_counter_accomulatorsWB_done);
-        printf("Main thread is done resetting counter and released mutex\n");
-
-
-        // Signal worker threads to continue
-        printf("Main thread is ready to continue, broadcasting waiting working threads\n");
-        if (i == TOTAL_ITERATIONS_SUM){
-            printf("Main thread is done since i is %d\n", i);
+        i++;
+        if (i == TOTAL_ITERATIONS_SUM) {
+            printf("Main finished\n"); 
+            pthread_mutex_lock(&lock_accomulatorWB);
             flag_stop_accomulatorsWB = 1;
-            pthread_cond_broadcast(&cond_waitfor_main_accomulatorWB); // Use broadcast to signal all waiting threads
-            break;
-        }
-        else{
-            pthread_cond_broadcast(&cond_waitfor_main_accomulatorWB); // Use broadcast to signal all waiting threads
-        }
+            flag_start_accomulatorsWB = 1; //to make htem go out of the loop
+            pthread_cond_broadcast(&cond_waitfor_main_accomulatorWB);
+            pthread_mutex_unlock(&lock_accomulatorWB);
+            break;}
     }
+    printf("joining threads\n");
+    for (i=0; i<NUM_ACC_THREADS; i++){
+    pthread_join(threads[i], NULL);
+    }
+    printf("threads joined\n");
+    
     int c = 1;
     // Print weights
     printf("GLOBAL MULTITHREAD");
