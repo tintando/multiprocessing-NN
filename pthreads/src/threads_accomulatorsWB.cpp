@@ -8,12 +8,15 @@
 
 typedef struct {
     Thread_args_train **thread_args_train;
+    MLP* mlp;
     long thread_id;
-    double** weights_global; //pointer to list of weights of main thread (pointer to an array of pointers(layer) to an array of weights)
+    double learning_rate;
+    int current_batch_size;
+    double** weights_accomulator_global; //pointer to list of weights of main thread (pointer to an array of pointers(layer) to an array of weights)
     int start_layer_weight; 
     int start_weight;
     int counter_weight_max;
-    double** biases_global;  //pointer to list of weights of main thread (pointer to an array of pointers(layer) to an array of biases)
+    double** biases_accomulator_global;  //pointer to list of weights of main thread (pointer to an array of pointers(layer) to an array of biases)
     int start_layer_bias;
     int start_bias;
     int counter_bias_max;
@@ -24,10 +27,10 @@ typedef struct {
 
 void printThreadArgs_accomulatorWB(Thread_args_accomulatorWB* thread_args_accomulatorWB, int NUM_ACC_THREADS){
     for (int i = 0; i < NUM_ACC_THREADS; i++){
-        printf("thread %d, weights_global = %lf\n", i, thread_args_accomulatorWB[i].weights_global[1][0]);
+        printf("thread %d, weights_accomulator_global = %lf\n", i, thread_args_accomulatorWB[i].weights_accomulator_global[1][0]);
     }
     for (int i = 0; i < NUM_ACC_THREADS; i++){
-        printf("thread %d, biases_global = %lf\n", i, thread_args_accomulatorWB[i].biases_global[1][0]);
+        printf("thread %d, biases_accomulator_global = %lf\n", i, thread_args_accomulatorWB[i].biases_accomulator_global[1][0]);
     }
     for (int i = 0; i < NUM_ACC_THREADS; i++){
         printf("thread %d, start_layer_weight = %d\n", i, thread_args_accomulatorWB[i].start_layer_weight);
@@ -58,13 +61,14 @@ void printThreadArgs_accomulatorWB(Thread_args_accomulatorWB* thread_args_accomu
     for (int i = 0; i < NUM_ACC_THREADS; i++){
         printf("thread %d, num_working_threads = %d\n", i, thread_args_accomulatorWB[i].num_working_threads);
     }
+    printMLP(thread_args_accomulatorWB->mlp);
     printf("accessing thread_args_train[0]");
     printThreadArgs_train(thread_args_accomulatorWB->thread_args_train[0]);
     printf("printed everything\n");
 }
 
 
-int createThreadArgs_accomulatorWB(int NUM_ACC_THREADS, Thread_args_accomulatorWB* thread_args_accomulatorWB, MLP* mlp, Thread_args_train **thread_args_train, double** grad_weights_accumulators, double** grad_biases_accumulator){
+int createThreadArgs_accomulatorWB(int NUM_ACC_THREADS, Thread_args_accomulatorWB* thread_args_accomulatorWB, MLP* mlp, Thread_args_train **thread_args_train, double** grad_weights_accumulators, double** grad_biases_accumulator, double learning_rate){
 
     //compute amount of weights in the network
     int total_weights = 0;
@@ -154,14 +158,6 @@ int createThreadArgs_accomulatorWB(int NUM_ACC_THREADS, Thread_args_accomulatorW
 //------------each thread now knows the range of weights and biases it has to sum----------------
 
 //------------syncronize accomulator threads with feedforward and backpropagation threads----------------
-    for (int i = 0; i < NUM_ACC_THREADS; i++){
-        thread_args_accomulatorWB[i].layers_size = mlp->layers_sizes;
-        thread_args_accomulatorWB[i].num_layers = mlp->num_layers;
-        thread_args_accomulatorWB[i].thread_id = i; //the logical id of the thread
-        thread_args_accomulatorWB[i].thread_args_train = thread_args_train; //the pointer of the list of pointers to the backpropagation and feedforward threads
-        thread_args_accomulatorWB[i].weights_global = grad_weights_accumulators; //the pointer to the list of weights of the main thread
-        thread_args_accomulatorWB[i].biases_global = grad_biases_accumulator;   //the pointer to the list of biases of the main thread
-    }
 
     return num_working_weights_threads;
 }
