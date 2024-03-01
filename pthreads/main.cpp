@@ -402,7 +402,7 @@ void trainMLP(Data train_dataset, MLP* mlp, int num_epochs, int default_batch_si
 
 
     double b = args_accomulatorWB[0].mlp->biases[1][0];
-    printf("b = %lf\n", b);
+    //printf("b = %lf\n", b);
     //pause();
     int batch_start_index;
     int current_batch_size;

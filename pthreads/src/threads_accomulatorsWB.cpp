@@ -90,14 +90,14 @@ int createThreadArgs_accomulatorWB(int NUM_ACC_THREADS, Thread_args_accomulatorW
     for (int i = 1; i<mlp->num_layers; i++){
         for (int w=0; w < mlp->layers_sizes[i] * mlp->layers_sizes[i-1]; w++){//iterate trough the weights
             if (start_flag) {
-                printf("weights thread %d starts from [%d][%d]\n", thread_id, i, w); 
+                //printf("weights thread %d starts from [%d][%d]\n", thread_id, i, w); 
                 thread_args_accomulatorWB[thread_id].start_layer_weight = i;
                 thread_args_accomulatorWB[thread_id].start_weight = w;
                 start_flag = 0;
             }
             count++;
             if (count >= ((remainder_weights>0) ? weights_per_thread + 1 : weights_per_thread)){
-                printf("weights thread %d finishs at [%d][%d], total of %d weights\n", thread_id, i, w, count);
+                //printf("weights thread %d finishs at [%d][%d], total of %d weights\n", thread_id, i, w, count);
                 thread_args_accomulatorWB[thread_id].counter_weight_max = count;
                 start_flag = 1;
                 remainder_weights --;
