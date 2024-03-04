@@ -289,10 +289,12 @@ void *diocan(void* voidArgs){
 
                 //sum the weights
                 for (int t = 0; t < NUM_THREADS; t++){
-                    args->weights_global[i][w] += args->thread_args_train[t]->my_grad_weights_accumulators[i][w];
+                    args->weights_accomulator_global[i][w] += args->thread_args_train[t]->my_grad_weights_accumulators[i][w];
                     //printf("thread [%d] is summing weight[%d][%d][%d] = %lf\n",thread_id, t, i, w, args->thread_args_train[t]->my_grad_weights_accumulators[i][w]);
                 }
                 counter++;
+
+                args->mlp->weights[i][w] += args->learning_rate * (args->weights_accomulator_global[i][w] / args->current_batch_size);
                 //printf("counter = %d\n", counter);
             }
 
@@ -321,10 +323,11 @@ void *diocan(void* voidArgs){
 
                 //sum the biases
                 for (int t = 0; t < NUM_THREADS; t++){
-                    args->biases_global[i][b] += args->thread_args_train[t]->my_grad_biases_accumulator[i][b];
+                    args->biases_accomulator_global[i][b] += args->thread_args_train[t]->my_grad_biases_accumulator[i][b];
                     //printf("thread [%d] is summing bias[%d][%d][%d] = %lf\n",thread_id, t, i, b, args->thread_args_train[t]->my_grad_biases_accumulator[i][b]);
                 }
                 counter++;
+                args->mlp->biases[i][b] += args->learning_rate * (args->biases_accomulator_global[i][b] / args->current_batch_size);
                 //printf("counter = %d\n", counter); 
             }
             //if it is done, it has to break the loop
@@ -373,14 +376,34 @@ void trainMLP(Data train_dataset, MLP* mlp, int num_epochs, int default_batch_si
         pthread_create(&threads[thread_id], NULL,  thread_action_train, (void *)thread_args_train[thread_id]);
     }
     //initialize accomulatorWB threads data structure
-    Thread_args_accomulatorWB thread_args_accomulatorWB[NUM_ACC_THREADS];
-    int num_working_weights_threads = createThreadArgs_accomulatorWB(NUM_ACC_THREADS, thread_args_accomulatorWB, mlp, thread_args_train, grad_weights_accumulators, grad_biases_accumulator);
-    //the logical identifier of accomulatorWB threads starts from NUM_threads but we have to pass the right  thread_args_accomulatorWB
+    
+    Thread_args_accomulatorWB* args_accomulatorWB = (Thread_args_accomulatorWB*) malloc(NUM_ACC_THREADS * sizeof(Thread_args_accomulatorWB));
+    
+    //if possible this part should stay in createThreadArgs_accomulatorWB function
+    for (int i = 0; i < NUM_ACC_THREADS; i++){
+        args_accomulatorWB[i].learning_rate = learning_rate;
+        ((args_accomulatorWB)[i]).mlp = mlp;
+        args_accomulatorWB[i].layers_size = mlp->layers_sizes;
+        args_accomulatorWB[i].num_layers = mlp->num_layers;
+        args_accomulatorWB[i].thread_id = i; //the logical id of the thread
+        args_accomulatorWB[i].thread_args_train = thread_args_train; //the pointer of the list of pointers to the backpropagation and feedforward threads
+        args_accomulatorWB[i].weights_accomulator_global = grad_weights_accumulators; //the pointer to the list of weights of the main thread
+        args_accomulatorWB[i].biases_accomulator_global = grad_biases_accumulator;   //the pointer to the list of biases of the main thread
+    }
+    //......
+
+    int num_working_weights_threads = createThreadArgs_accomulatorWB(NUM_ACC_THREADS, args_accomulatorWB, mlp, thread_args_train, grad_weights_accumulators, grad_biases_accumulator, learning_rate);
+    //the logical identifier of accomulatorWB threads starts from NUM_threads but we have to pass the right  args_accomulatorWB
     for (long thread_id = NUM_THREADS; thread_id < NUM_ACC_THREADS + NUM_THREADS; thread_id++){
-        pthread_create(&threads[thread_id], NULL,  diocan, (void *)&thread_args_accomulatorWB[thread_id - NUM_THREADS]);
+        pthread_create(&threads[thread_id], NULL,  diocan, (void *)&args_accomulatorWB[thread_id - NUM_THREADS]);
     }
     // pause();
+    //printThreadArgs_accomulatorWB(args_accomulatorWB, NUM_ACC_THREADS);
 
+
+    double b = args_accomulatorWB[0].mlp->biases[1][0];
+    //printf("b = %lf\n", b);
+    //pause();
     int batch_start_index;
     int current_batch_size;
     for (int epoch = 0; epoch < num_epochs; epoch++) {
@@ -455,6 +478,10 @@ void trainMLP(Data train_dataset, MLP* mlp, int num_epochs, int default_batch_si
                 //         }
                 //     }
                 // }
+            }
+
+            for (int i = 0; i<NUM_ACC_THREADS; i++){
+                args_accomulatorWB[i].current_batch_size = current_batch_size;
             }
 
             pthread_mutex_lock(&lock_accomulatorWB);
