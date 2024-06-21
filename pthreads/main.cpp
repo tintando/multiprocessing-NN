@@ -498,8 +498,6 @@ void trainMLP(Data train_dataset, MLP* mlp, int num_epochs, int default_batch_si
                 // printf("Main waiting on cond_waitfor_accomulatorWB_main because counter_accomulatorWB_finished = %d\n", counter_accomulatorWB_finished);
                 pthread_cond_wait(&cond_waitfor_accomulatorWB_main, &lock_accomulatorWB);
             }
-            pthread_mutex_unlock(&lock_accomulatorWB);
-            pthread_mutex_lock(&lock_accomulatorWB);
             // printf("all threads finished and waiting on cond_waitfor_main_accomulatorWBpause\n");
             // printf("Main resumes because all threads finished\n");
             // printf("main sets flag_mainworking_accoumulatorWB to 1\n");
