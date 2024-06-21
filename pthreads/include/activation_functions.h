@@ -16,6 +16,6 @@ double drelu(double x);
 double dtanh(double x);
 
 // Utility function for applying an activation function to a layer
-void applyActivationFunction(double *layer, int size, ActivationFunction activationFunc);
+void applyActivationFunction(double *logits, double *activations, int size, ActivationFunction activationFunc);
 
 #endif // NEURAL_NETWORK_H

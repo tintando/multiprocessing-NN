@@ -12,8 +12,8 @@
 
 #define N_FEATURES 8
 #define N_LABELS 1
-#define NUM_THREADS 50
-#define NUM_ACC_THREADS 30
+#define NUM_THREADS 1
+#define NUM_ACC_THREADS 1
 
 //---------------------train-------------------
 
@@ -39,10 +39,10 @@ void feedforward_thread(Thread_args_train* args){
     // compute neuron activation for the hidden layers and output layer
     for (int i = 1; i < args->mlp->num_layers; i++) {
          // for each hidden layer
-        matrixMultiplyAndAddBias(args->my_neuron_activations[i], args->my_neuron_activations[i-1], args->mlp->weights[i],
+        matrixMultiplyAndAddBias(args->my_logits[i], args->my_neuron_activations[i-1], args->mlp->weights[i],
                                 args->mlp->biases[i], args->mlp->layers_sizes[i-1], args->mlp->layers_sizes[i]);
         
-        applyActivationFunction(args->my_neuron_activations[i], args->mlp->layers_sizes[i], args->act);
+        applyActivationFunction(args->my_logits[i], args->my_neuron_activations[i], args->mlp->layers_sizes[i], args->act);
     }
 }
 
@@ -77,7 +77,7 @@ void backpropagation_thread(Thread_args_train* args, int sample_i){
         * 
         * This gradient (delta) is used to update the weights in the network during backpropagation.
         */
-        args->my_delta[last_layer_index][j] = (args->dataset->targets[sample_i][j] - args->my_neuron_activations[last_layer_index][j]) * args->dact(args->my_neuron_activations[last_layer_index][j]);
+        args->my_delta[last_layer_index][j] = (args->dataset->targets[sample_i][j] - args->my_neuron_activations[last_layer_index][j]) * args->dact(args->my_logits[last_layer_index][j]);
 
         //accomulating the derivative of the activation function for the last layer neurons for all the samples relative to the thread
         args->my_grad_biases_accumulator[last_layer_index][j] += args->my_delta[last_layer_index][j]; 
@@ -135,7 +135,7 @@ void backpropagation_thread(Thread_args_train* args, int sample_i){
             // The error variable now contains the total error propagated back to neuron j in layer i from the layer ahead.
             
             // Calculate the delta for the current neuron j in layer i by multiplying the error by the derivative of the activation function.
-            args->my_delta[i][j] = error * args->dact(args->my_neuron_activations[i][j]);
+            args->my_delta[i][j] = error * args->dact(args->my_logits[i][j]);
 
             // Accumulate the gradient of biases for the neuron j in layer i, to be used for bias updates.
             args->my_grad_biases_accumulator[i][j] += args->my_delta[i][j];
@@ -639,7 +639,7 @@ double evaluateMLP(MLP *mlp, Data test_data, ActivationFunction act) {
 
 int main(int argc, char *argv[]){
 
-    const char* filename = "/home/lexyo/Documenti/Dev/Multicore/multiprocessing-NN/pthreads/datasets/california.csv";
+    const char* filename = "/home/lexyo/Dev/Multicore/multiprocessing-NN/pthreads/datasets/california.csv";
     double **dataset = NULL, **targets = NULL;
     int n_samples = 0;
 
@@ -668,8 +668,8 @@ int main(int argc, char *argv[]){
     if (!mlp) return 1;
     //printMLP(mlp);
     // Define learning parameters
-    double learning_rate = 0.01;
-    int num_epochs = 5000;
+    double learning_rate = 0.001;
+    int num_epochs = 1000;
     int batch_size = 4000; // Adjust based on your dataset size and memory constraints
     if (batch_size < NUM_THREADS){
         printf("Impossible to start the program, batch_size[%d] < num_thread[%d]", batch_size, NUM_THREADS);
@@ -678,7 +678,7 @@ int main(int argc, char *argv[]){
     // Train MLP
     trainMLP(splitted_dataset.train, mlp, num_epochs, batch_size, learning_rate);
     
-    double error = evaluateMLP(mlp, splitted_dataset.test, sigmoid);
+    double error = evaluateMLP(mlp, splitted_dataset.test, relu);
     printf("error is %f\n",error);
 
     // // Clean up

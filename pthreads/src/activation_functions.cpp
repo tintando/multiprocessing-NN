@@ -28,8 +28,8 @@ double dtanh(double x) {
     return 1 - tanh_x * tanh_x;
 }
 
-void applyActivationFunction(double *layer, int size, ActivationFunction activationFunc) {
+void applyActivationFunction(double *logits, double *activations, int size, ActivationFunction activationFunc) {
     for (int i = 0; i < size; i++) {
-        layer[i] = activationFunc(layer[i]);
+        activations[i] = activationFunc(logits[i]);
     }
 }

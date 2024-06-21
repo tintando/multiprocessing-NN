@@ -6,6 +6,7 @@ typedef struct Thread_args_train{
     long thread_id;
     MLP* mlp;
     double **my_neuron_activations; //the neuron activations for the samples of the thread (array of pointers (layers) to array of doubles)
+    double **my_logits; //the logits for the samples of the thread (array of pointers (layers) to array of doubles)
     double **my_delta;  //array of pointers to array of doubles
     double **my_grad_weights_accumulators; //array of pointers (layer) to array of doubles (linearized 2d matrix of grad_weights)
     double **my_grad_biases_accumulator; //array of pointers(layer) to array of doubles
@@ -124,13 +125,14 @@ Thread_args_train* createThreadArgs_train(MLP *mlp, long thread_id){
 
     //initializing the array of pointers
     args->my_neuron_activations = (double**)malloc((mlp->num_layers) * sizeof(double *));
+    args->my_logits = (double **)malloc((mlp->num_layers) * sizeof(double *));
     args->my_delta = (double **)malloc((mlp->num_layers) * sizeof(double *));
     args->my_grad_weights_accumulators = (double**)malloc((mlp->num_layers) * sizeof(double *));
     args->my_grad_biases_accumulator = (double **)malloc((mlp->num_layers) * sizeof(double *));
     
     args->my_batch_loss = 0;
-    args->act = sigmoid;
-    args->dact = dsigmoid;
+    args->act = relu;
+    args->dact = drelu;
 
     //loop trough hidden layers and initialize persistent data structures
     for(int i = 0; i < mlp->num_layers; i++){
@@ -138,6 +140,10 @@ Thread_args_train* createThreadArgs_train(MLP *mlp, long thread_id){
         //initialize and allocate neuron activations for the current layer
         //each layer has activations
         args->my_neuron_activations[i] = (double *)calloc(mlp->layers_sizes[i], sizeof(double));
+
+        //initialize and allocate the logits for the current layer
+        args->my_logits[i] = (double *)calloc(mlp->layers_sizes[i], sizeof(double));
+
         //initialize and allocate the gradient weights accumulator for the current layer
         //printf("layer %d has %d neurons\n", i, mlp->layers_sizes[i]);
         if (i!=0){
@@ -167,7 +173,7 @@ Thread_args_train* createThreadArgs_train(MLP *mlp, long thread_id){
     // }
 
     //free memory if there are errors in allocations
-    if (args->my_neuron_activations == NULL || args->my_delta == NULL || args->my_grad_weights_accumulators == NULL || args->my_grad_biases_accumulator == NULL){
+    if (args->my_neuron_activations == NULL || args->my_delta == NULL || args->my_grad_weights_accumulators == NULL || args->my_grad_biases_accumulator == NULL || args->my_logits == NULL){
         freeThreadArgs_train(args);
         return NULL;
     }
