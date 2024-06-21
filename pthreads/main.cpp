@@ -12,8 +12,8 @@
 
 #define N_FEATURES 8
 #define N_LABELS 1
-#define NUM_THREADS 1
-#define NUM_ACC_THREADS 1
+#define NUM_THREADS 8
+#define NUM_ACC_THREADS 8
 
 //---------------------train-------------------
 
@@ -172,7 +172,6 @@ void *thread_action_train(void *voidArgs){
     Thread_args_train *args = (Thread_args_train *)voidArgs;//casting the correct type to args
 
     // Wait for the signal to start work
-
     pthread_mutex_lock(&counter_lock);
     while (!flag_start_train) { // Wait until flag_start_train is set
         pthread_cond_wait(&cond_start_train, &counter_lock);
@@ -181,6 +180,7 @@ void *thread_action_train(void *voidArgs){
 
     // will be true once the train is finished
     while(!flag_stop_train){
+        // Thread work
 
         //resetting the batch loss at beginning of every batch
         args->my_batch_loss = 0.0;
@@ -450,9 +450,7 @@ void trainMLP(Data train_dataset, MLP* mlp, int num_epochs, int default_batch_si
                 //printf("Main thread is waiting on cond_waitfor_train_main\n");
                 pthread_cond_wait(&cond_waitfor_train_main, &counter_lock);
             }
-            pthread_mutex_unlock(&counter_lock);
             //printf("All worker threads have incremented global_counter_train and are waiting on cond_waitfor_main_train\n");
-            pthread_mutex_lock(&counter_lock);
             //printf("Main thread is resetting global_counter_train and took mutex\n");
             global_counter_train = 0; // Reset global_counter_train for next iteration
             pthread_mutex_unlock(&counter_lock);
