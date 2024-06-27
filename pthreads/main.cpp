@@ -250,7 +250,7 @@ int flag_mainworking_accoumulatorWB = 0;
 int flag_start_accomulatorsWB = 0;
 int flag_stop_accomulatorsWB = 0;
 
-void *diocan(void* voidArgs){
+void *thread_action_accomulate(void* voidArgs){
     Thread_args_accomulatorWB *args = (Thread_args_accomulatorWB*)voidArgs;
     long thread_id = args->thread_id;
 
@@ -395,7 +395,7 @@ void trainMLP(Data train_dataset, MLP* mlp, int num_epochs, int default_batch_si
     int num_working_weights_threads = createThreadArgs_accomulatorWB(NUM_ACC_THREADS, args_accomulatorWB, mlp, thread_args_train, grad_weights_accumulators, grad_biases_accumulator, learning_rate);
     //the logical identifier of accomulatorWB threads starts from NUM_threads but we have to pass the right  args_accomulatorWB
     for (long thread_id = NUM_THREADS; thread_id < NUM_ACC_THREADS + NUM_THREADS; thread_id++){
-        pthread_create(&threads[thread_id], NULL,  diocan, (void *)&args_accomulatorWB[thread_id - NUM_THREADS]);
+        pthread_create(&threads[thread_id], NULL,  thread_action_accomulate, (void *)&args_accomulatorWB[thread_id - NUM_THREADS]);
     }
     // pause();
     //printThreadArgs_accomulatorWB(args_accomulatorWB, NUM_ACC_THREADS);
